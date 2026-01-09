@@ -5,7 +5,7 @@ import LiveInterface from './components/LiveInterface';
 import WelcomeScreen from './components/WelcomeScreen';
 import { createChatSession, APP_MAPPING } from './services/geminiService';
 import { PROFESSIONAL_INSTRUCTION, PERSONAL_INSTRUCTION } from './constants';
-import { Mic, Sparkles, LogOut, Heart, Brain } from 'lucide-react';
+import { Mic, Sparkles, LogOut, Heart, Brain, AlertTriangle } from 'lucide-react';
 
 type Mode = 'professional' | 'personal';
 
@@ -25,6 +25,9 @@ const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userName, setUserName] = useState('');
   
+  // Error State for API Key
+  const [configError, setConfigError] = useState<string | null>(null);
+
   // Two separate refs for two separate chat sessions (to keep context isolated)
   const proSessionRef = useRef<any>(null);
   const personalSessionRef = useRef<any>(null);
@@ -40,9 +43,15 @@ const App: React.FC = () => {
   };
 
   const startSessions = () => {
-    // Initialize both sessions on startup/login
-    proSessionRef.current = createChatSession(PROFESSIONAL_INSTRUCTION);
-    personalSessionRef.current = createChatSession(PERSONAL_INSTRUCTION);
+    try {
+        // Initialize both sessions on startup/login
+        proSessionRef.current = createChatSession(PROFESSIONAL_INSTRUCTION);
+        personalSessionRef.current = createChatSession(PERSONAL_INSTRUCTION);
+        setConfigError(null);
+    } catch (e: any) {
+        console.error("Session Init Error:", e);
+        setConfigError("API Key Configuration Missing");
+    }
   };
 
   const handleLogin = (name: string) => {
@@ -100,8 +109,13 @@ const App: React.FC = () => {
     
     // Safety check if session lost
     if (!activeSession) {
-        if (currentMode === 'professional') proSessionRef.current = createChatSession(PROFESSIONAL_INSTRUCTION);
-        else personalSessionRef.current = createChatSession(PERSONAL_INSTRUCTION);
+        try {
+            if (currentMode === 'professional') proSessionRef.current = createChatSession(PROFESSIONAL_INSTRUCTION);
+            else personalSessionRef.current = createChatSession(PERSONAL_INSTRUCTION);
+        } catch (e) {
+             setConfigError("API Key is missing or invalid. Please check deployment settings.");
+             return;
+        }
     }
 
     const userMsg: Message = {
@@ -214,14 +228,13 @@ const App: React.FC = () => {
       
       let errorText = "Oops! Something went wrong.";
       if (error.message) {
-        if (error.message.includes('API key') || error.message.includes('API_KEY')) {
-           errorText = "Configuration Error: API Key is invalid or missing.";
+        if (error.message.includes('API key') || error.message.includes('400')) {
+           errorText = "SETUP ERROR: API Key is invalid or missing. Please check your project settings.";
+           setConfigError("Invalid API Key");
         } else if (error.message.includes('404')) {
-           errorText = "Model Error: The AI model is currently unavailable (404).";
+           errorText = "Model Error: The AI model is currently unavailable.";
         } else if (error.message.includes('403')) {
-           errorText = "Access Error: Your API key doesn't have permission for this model (403).";
-        } else if (error.message.includes('400')) {
-           errorText = "Request Error: Bad Request (400). Please refresh.";
+           errorText = "Access Error: Your API key doesn't have permission for this model.";
         } else {
            errorText = `Error: ${error.message}`;
         }
@@ -340,6 +353,17 @@ const App: React.FC = () => {
                     </button>
                 </div>
                 </header>
+
+                {/* Configuration Error Banner */}
+                {configError && (
+                    <div className="bg-red-500/10 border border-red-500/40 rounded-xl p-3 mb-4 flex items-center gap-3 animate-fade-in">
+                        <AlertTriangle className="text-red-400" size={20} />
+                        <div className="flex flex-col">
+                            <span className="text-red-300 font-bold text-sm">Deployment Configuration Error</span>
+                            <span className="text-red-400/80 text-xs">API Key is missing in your environment variables. Please check your project settings.</span>
+                        </div>
+                    </div>
+                )}
 
                 {/* Content Area */}
                 <main className={`flex-1 relative overflow-hidden transition-all duration-500 
