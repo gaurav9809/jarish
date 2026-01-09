@@ -178,7 +178,6 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ isActive, onToggle }) => 
       streamRef.current = stream;
 
       const client = getLiveClient();
-      // Only use function declarations for Live API; Google Search tool is not supported in Live
       const tools = [{ functionDeclarations: [openAppFunction] }];
       
       const sessionPromise = client.connect({
@@ -313,11 +312,11 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ isActive, onToggle }) => 
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-full w-full relative overflow-hidden">
+    <div className="flex flex-col items-center justify-center h-full w-full relative overflow-hidden p-4">
        {/* Ambient Glow */}
-       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-brand-primary/10 rounded-full blur-[100px] pointer-events-none"></div>
+       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] md:w-[500px] h-[300px] md:h-[500px] bg-brand-primary/10 rounded-full blur-[60px] md:blur-[100px] pointer-events-none"></div>
 
-      <div className="relative z-10 flex flex-col items-center gap-10">
+      <div className="relative z-10 flex flex-col items-center gap-6 md:gap-10 w-full max-w-sm md:max-w-none">
         <div className="relative">
              <Visualizer 
                 analyser={analyserRef.current} 
@@ -325,42 +324,42 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ isActive, onToggle }) => 
                 isSpeaking={isSpeaking}
              />
              {status === "ONLINE" && (
-                 <div className="absolute top-[-20px] left-1/2 -translate-x-1/2 text-brand-secondary font-bold tracking-[0.2em] text-xs animate-pulse">
+                 <div className="absolute top-[-20px] left-1/2 -translate-x-1/2 text-brand-secondary font-bold tracking-[0.2em] text-[10px] md:text-xs animate-pulse whitespace-nowrap">
                      LIVE CONNECTION
                  </div>
              )}
         </div>
 
-        <div className="text-center space-y-3">
-            <h2 className={`text-4xl font-sans font-light tracking-wide text-white drop-shadow-lg`}>
+        <div className="text-center space-y-2 md:space-y-3">
+            <h2 className={`text-2xl md:text-4xl font-sans font-light tracking-wide text-white drop-shadow-lg`}>
                 {status === "ONLINE" ? (isSpeaking ? "Siya is speaking..." : "Listening...") : status}
             </h2>
-            {error && <p className="text-red-400 font-mono text-sm">{error}</p>}
+            {error && <p className="text-red-400 font-mono text-xs md:text-sm">{error}</p>}
         </div>
 
-        <div className="flex gap-6 items-center">
+        <div className="flex gap-4 md:gap-6 items-center flex-wrap justify-center">
             <button
               onClick={toggleScreenShare}
               disabled={status !== "ONLINE"}
               className={`
-                p-4 rounded-full transition-all transform hover:scale-110
+                p-3 md:p-4 rounded-full transition-all transform hover:scale-110
                 ${isScreenSharing
                     ? 'bg-amber-500 text-black shadow-[0_0_30px_rgba(245,158,11,0.5)]' 
                     : 'bg-white/10 text-white hover:bg-white/20'}
               `}
               title="Share Screen"
             >
-              {isScreenSharing ? <MonitorOff size={24} /> : <Monitor size={24} />}
+              {isScreenSharing ? <MonitorOff size={20} className="md:w-6 md:h-6" /> : <Monitor size={20} className="md:w-6 md:h-6" />}
             </button>
 
             <button
               onClick={onToggle}
               className={`
-                px-8 py-4 rounded-full font-bold tracking-widest flex items-center gap-3 transition-all transform hover:scale-105 shadow-2xl
+                px-6 py-3 md:px-8 md:py-4 rounded-full font-bold tracking-widest flex items-center gap-2 md:gap-3 transition-all transform hover:scale-105 shadow-2xl text-sm md:text-base
                 bg-red-500/80 hover:bg-red-500 text-white border border-red-400/50
               `}
             >
-              <MicOff size={20} /> END CALL
+              <MicOff size={18} className="md:w-5 md:h-5" /> END CALL
             </button>
         </div>
       </div>

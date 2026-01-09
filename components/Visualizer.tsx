@@ -29,10 +29,20 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
     const dataArray = new Uint8Array(analyser ? analyser.frequencyBinCount : 0);
 
     const draw = () => {
+      // Dynamic Sizing based on computed style (responsive)
+      const rect = canvas.getBoundingClientRect();
+      if (canvas.width !== rect.width || canvas.height !== rect.height) {
+          canvas.width = rect.width;
+          canvas.height = rect.height;
+      }
+
       const width = canvas.width;
       const height = canvas.height;
       const centerX = width / 2;
       const centerY = height / 2;
+      
+      // Calculate responsive radius
+      const baseRadius = Math.min(width, height) * 0.3; // 30% of smallest dimension
       
       ctx.clearRect(0, 0, width, height);
 
@@ -45,6 +55,7 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
       }
       
       // --- Smooth Pulsing Effect ---
+      // Reduce math operations if not active
       const pulse = Math.sin(Date.now() / 1000) * 5;
       const speakScale = isSpeaking ? (average / 50) : 0;
       const baseScale = 1 + speakScale;
@@ -52,14 +63,14 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
       ctx.save();
       ctx.translate(centerX, centerY);
       
-      // 1. Outer Glow (Soft Halo)
+      // 1. Outer Glow (Soft Halo) - Optimization: Only draw if active
       if (isActive) {
-          const gradient = ctx.createRadialGradient(0, 0, 100, 0, 0, 160 + average);
+          const gradient = ctx.createRadialGradient(0, 0, baseRadius * 0.8, 0, 0, baseRadius * 1.4 + average);
           gradient.addColorStop(0, 'rgba(139, 92, 246, 0.2)'); // Violet
           gradient.addColorStop(1, 'rgba(236, 72, 153, 0.0)'); // Pink fade
           ctx.fillStyle = gradient;
           ctx.beginPath();
-          ctx.arc(0, 0, 180 + average, 0, Math.PI * 2);
+          ctx.arc(0, 0, baseRadius * 1.5 + average, 0, Math.PI * 2);
           ctx.fill();
       }
 
@@ -68,7 +79,7 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
       
       // Border Circle
       ctx.beginPath();
-      ctx.arc(0, 0, 120, 0, Math.PI * 2, true);
+      ctx.arc(0, 0, baseRadius, 0, Math.PI * 2, true);
       ctx.lineWidth = isActive ? 4 : 2;
       ctx.strokeStyle = isActive ? (isSpeaking ? '#ec4899' : '#8b5cf6') : '#4b5563';
       ctx.stroke();
@@ -76,11 +87,13 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
       
       // Clip for Image
       ctx.beginPath();
-      ctx.arc(0, 0, 115, 0, Math.PI * 2, true);
+      ctx.arc(0, 0, baseRadius - 5, 0, Math.PI * 2, true);
       ctx.clip();
 
       if (imageRef.current && imageRef.current.complete && imageRef.current.naturalWidth > 0) {
-        ctx.drawImage(imageRef.current, -115, -115, 230, 230);
+        // Draw image covering the circle
+        const size = baseRadius * 2;
+        ctx.drawImage(imageRef.current, -baseRadius, -baseRadius, size, size);
         
         // Overlay tint based on state
         if (!isActive) {
@@ -103,7 +116,7 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
           
           for (let i = 0; i < bars; i++) {
               const value = dataArray[i * 2] || 0;
-              const barHeight = (value / 255) * 40;
+              const barHeight = (value / 255) * (baseRadius * 0.35); // Bar height relative to radius
               
               ctx.rotate(step);
               
@@ -111,12 +124,8 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
               ctx.globalAlpha = 0.6;
               ctx.beginPath();
               
-              // TypeScript safe check for roundRect
-              if (typeof (ctx as any).roundRect === 'function') {
-                  (ctx as any).roundRect(130, -2, barHeight + 5, 4, 2);
-              } else {
-                  ctx.rect(130, -2, barHeight + 5, 4); // Fallback for older browsers
-              }
+              // Simple rect for performance compatibility
+              ctx.rect(baseRadius + 10, -2, barHeight + 5, 4); 
               
               ctx.fill();
           }
@@ -132,16 +141,15 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
   }, [analyser, isActive, isSpeaking]);
 
   return (
-    <div className="relative flex items-center justify-center">
+    <div className="relative flex items-center justify-center w-full aspect-square max-w-[300px] md:max-w-[400px]">
         {/* Decorative background blobs */}
-        <div className={`absolute w-64 h-64 bg-brand-primary/30 rounded-full blur-3xl mix-blend-screen animate-blob ${isActive ? 'opacity-100' : 'opacity-0'} transition-opacity duration-1000`}></div>
-        <div className={`absolute w-64 h-64 bg-brand-secondary/30 rounded-full blur-3xl mix-blend-screen animate-blob animation-delay-2000 ${isActive ? 'opacity-100' : 'opacity-0'} transition-opacity duration-1000`}></div>
+        <div className={`absolute w-[70%] h-[70%] bg-brand-primary/30 rounded-full blur-3xl mix-blend-screen animate-blob ${isActive ? 'opacity-100' : 'opacity-0'} transition-opacity duration-1000`}></div>
+        <div className={`absolute w-[70%] h-[70%] bg-brand-secondary/30 rounded-full blur-3xl mix-blend-screen animate-blob animation-delay-2000 ${isActive ? 'opacity-100' : 'opacity-0'} transition-opacity duration-1000`}></div>
 
         <canvas 
         ref={canvasRef} 
-        width={400} 
-        height={400} 
-        className="w-[300px] h-[300px] sm:w-[350px] sm:h-[350px] relative z-10"
+        className="w-full h-full relative z-10"
+        style={{ willChange: 'transform' }} 
         />
     </div>
   );

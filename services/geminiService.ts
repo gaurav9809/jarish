@@ -138,6 +138,13 @@ const getApiKey = (): string => {
 // Instantiate client
 export const createChatSession = (customInstruction?: string): Chat => {
   const apiKey = getApiKey();
+  
+  // Explicitly throw if key is missing so App.tsx can catch it immediately
+  // instead of waiting for a generic Network Error
+  if (!apiKey || apiKey.trim() === "") {
+      throw new Error("API_KEY_MISSING");
+  }
+
   const ai = new GoogleGenAI({ apiKey });
   
   const modelId = 'gemini-3-flash-preview'; 
@@ -156,6 +163,9 @@ export const createChatSession = (customInstruction?: string): Chat => {
 
 export const getLiveClient = () => {
   const apiKey = getApiKey();
+  if (!apiKey || apiKey.trim() === "") {
+      throw new Error("API_KEY_MISSING");
+  }
   const ai = new GoogleGenAI({ apiKey });
   return ai.live;
 };
