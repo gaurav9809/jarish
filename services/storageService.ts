@@ -9,9 +9,9 @@ const SESSION_KEY = 'siya_active_session_v1';
 // Step 3: Create Template -> Use {{otp_code}} in the message body -> Copy Template ID
 // Step 4: Go to Account -> Copy Public Key
 
-const EMAILJS_SERVICE_ID = 'service_1mt1ixk';   // Example: 'service_xq9...'
-const EMAILJS_TEMPLATE_ID = 'template_nnozjfs'; // Example: 'template_k8s...'
-const EMAILJS_PUBLIC_KEY = 'O25235Sj4imhkG8fo;'   // Example: 'user_9s8f...'
+const EMAILJS_SERVICE_ID: string = 'service_1mt1ixk';   // Example: 'service_xq9...'
+const EMAILJS_TEMPLATE_ID: string = 'template_nnozjfs'; // Example: 'template_k8s...'
+const EMAILJS_PUBLIC_KEY: string = 'O25235Sj4imhkG8fo;';   // Example: 'user_9s8f...'
 
 // --- Helpers ---
 
@@ -46,24 +46,19 @@ export const sendOTP = async (identity: string): Promise<string> => {
               },
               EMAILJS_PUBLIC_KEY
           );
+          // Only log success, do NOT log the OTP code
           console.log(`[SIYA SECURITY] Email sent to ${identity}`);
           return otp;
       } catch (error) {
           console.error("EmailJS Failed:", error);
-          // Fallback to console if email fails
-          console.log(`[SIYA SECURITY] Fallback OTP (Check Console): ${otp}`);
-          alert(`[Developer Mode] Email send failed. OTP is: ${otp}`);
-          return otp;
+          throw new Error("Failed to send email");
       }
   } else {
-      // Simulation mode (Fallback if keys are missing)
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          console.log(`[SIYA SECURITY] Simulation OTP for ${identity}: ${otp}`);
-          alert(`[Demo Mode] EmailJS keys not set. Your OTP is: ${otp}`);
-          resolve(otp);
-        }, 1000);
-      });
+      // Configuration is missing. 
+      // Do not fallback to alert/console logging the OTP.
+      console.error("EmailJS keys are missing or default.");
+      alert("EmailJS configuration is incomplete. Cannot send OTP.");
+      throw new Error("EmailJS configuration missing.");
   }
 };
 

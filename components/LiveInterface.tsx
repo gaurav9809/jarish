@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MicOff, Monitor, MonitorOff } from 'lucide-react';
+import { MicOff, PhoneOff, Video, Mic, Monitor } from 'lucide-react';
 import Visualizer from './Visualizer';
 import { getLiveClient, createPcmBlob, decodeAudioData, base64ToUint8Array, openAppFunction, APP_MAPPING, blobToBase64 } from '../services/geminiService';
 import { LiveServerMessage, Modality } from '@google/genai';
@@ -11,75 +11,48 @@ interface LiveInterfaceProps {
 }
 
 const LiveInterface: React.FC<LiveInterfaceProps> = ({ isActive, onToggle }) => {
-  const [status, setStatus] = useState<string>("OFFLINE");
+  const [status, setStatus] = useState<string>("CONNECTING...");
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
+  const [isMuted, setIsMuted] = useState(false);
+  
   // Audio Context Refs
   const inputContextRef = useRef<AudioContext | null>(null);
   const outputContextRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   
-  // Screen Share Refs
-  const screenStreamRef = useRef<MediaStream | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(document.createElement("video"));
-  const screenCanvasRef = useRef<HTMLCanvasElement>(document.createElement("canvas"));
-  const screenIntervalRef = useRef<number | null>(null);
-
   // Audio Queue
   const nextStartTimeRef = useRef<number>(0);
   const audioQueueRef = useRef<AudioBufferSourceNode[]>([]);
-  
-  // Session
   const sessionRef = useRef<Promise<any> | null>(null);
 
+  // Self View Video Ref
+  const selfVideoRef = useRef<HTMLVideoElement>(null);
+
   useEffect(() => {
-    if (!isActive) {
-      cleanup();
-    } else {
+    if (isActive) {
       initializeSession();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => cleanup();
   }, [isActive]);
 
   const cleanup = () => {
-    stopScreenShare();
-
     if (processorRef.current) {
       processorRef.current.disconnect();
       processorRef.current = null;
-    }
-    if (sourceRef.current) {
-      sourceRef.current.disconnect();
-      sourceRef.current = null;
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
-    if (inputContextRef.current) {
-      inputContextRef.current.close();
-      inputContextRef.current = null;
-    }
-    if (outputContextRef.current) {
-      outputContextRef.current.close();
-      outputContextRef.current = null;
-    }
+    if (inputContextRef.current) inputContextRef.current.close();
+    if (outputContextRef.current) outputContextRef.current.close();
     
-    audioQueueRef.current.forEach(source => {
-      try { source.stop(); } catch(e) {}
-    });
+    audioQueueRef.current.forEach(source => { try { source.stop(); } catch(e) {} });
     audioQueueRef.current = [];
     nextStartTimeRef.current = 0;
-    
-    setStatus("OFFLINE");
-    setIsSpeaking(false);
-    analyserRef.current = null;
-    sessionRef.current = null;
+    setStatus("ENDED");
   };
 
   const executeOpenApp = (appName: string): string => {
@@ -91,80 +64,8 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ isActive, onToggle }) => 
       return `Could not find app ${appName}`;
   };
 
-  const toggleScreenShare = async () => {
-    if (isScreenSharing) {
-      stopScreenShare();
-    } else {
-      await startScreenShare();
-    }
-  };
-
-  const startScreenShare = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-      screenStreamRef.current = stream;
-      videoRef.current.srcObject = stream;
-      videoRef.current.muted = true;
-      await videoRef.current.play();
-
-      setIsScreenSharing(true);
-
-      stream.getVideoTracks()[0].onended = () => {
-        stopScreenShare();
-      };
-
-      const ctx = screenCanvasRef.current.getContext('2d');
-      if (ctx) {
-         screenIntervalRef.current = window.setInterval(async () => {
-             if (!sessionRef.current) return;
-             
-             const width = videoRef.current.videoWidth;
-             const height = videoRef.current.videoHeight;
-             if (width === 0 || height === 0) return;
-
-             screenCanvasRef.current.width = width;
-             screenCanvasRef.current.height = height;
-             ctx.drawImage(videoRef.current, 0, 0, width, height);
-
-             screenCanvasRef.current.toBlob(async (blob) => {
-                 if (blob) {
-                     const base64Data = await blobToBase64(blob);
-                     sessionRef.current?.then(session => {
-                         session.sendRealtimeInput({
-                             media: { data: base64Data, mimeType: 'image/jpeg' }
-                         });
-                     });
-                 }
-             }, 'image/jpeg', 0.6);
-         }, 1000);
-      }
-
-    } catch (e) {
-      console.error("Screen share error:", e);
-      setIsScreenSharing(false);
-    }
-  };
-
-  const stopScreenShare = () => {
-    if (screenIntervalRef.current) {
-        clearInterval(screenIntervalRef.current);
-        screenIntervalRef.current = null;
-    }
-    if (screenStreamRef.current) {
-        screenStreamRef.current.getTracks().forEach(track => track.stop());
-        screenStreamRef.current = null;
-    }
-    if (videoRef.current.srcObject) {
-       videoRef.current.srcObject = null;
-    }
-    setIsScreenSharing(false);
-  };
-
   const initializeSession = async () => {
     try {
-      setStatus("INITIALIZING...");
-      setError(null);
-
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       inputContextRef.current = new AudioContextClass({ sampleRate: 16000 });
       outputContextRef.current = new AudioContextClass({ sampleRate: 24000 });
@@ -174,8 +75,14 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ isActive, onToggle }) => 
       analyser.connect(outputContextRef.current.destination);
       analyserRef.current = analyser;
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Get User Media (Camera + Mic) for "Video Call" feel
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
       streamRef.current = stream;
+
+      // Show self view
+      if (selfVideoRef.current) {
+          selfVideoRef.current.srcObject = stream;
+      }
 
       const client = getLiveClient();
       const tools = [{ functionDeclarations: [openAppFunction] }];
@@ -185,29 +92,27 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ isActive, onToggle }) => 
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }, // Kore is soft/feminine
           },
           systemInstruction: ADAPTIVE_SYSTEM_INSTRUCTION,
           tools: tools,
         },
         callbacks: {
           onopen: () => {
-            setStatus("ONLINE");
+            setStatus("CONNECTED");
             startAudioStream(stream, sessionPromise);
           },
           onmessage: async (message: LiveServerMessage) => {
+             // Handle Tools
              if (message.toolCall) {
                 for (const fc of message.toolCall.functionCalls) {
                     if (fc.name === 'openApp') {
                         const appName = fc.args['appName'] as string;
                         const result = executeOpenApp(appName);
-                        
                         sessionPromise.then(session => {
                             session.sendToolResponse({
                                 functionResponses: [{
-                                    id: fc.id,
-                                    name: fc.name,
-                                    response: { result: result }
+                                    id: fc.id, name: fc.name, response: { result: result }
                                 }]
                             });
                         });
@@ -215,154 +120,116 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ isActive, onToggle }) => 
                 }
              }
 
+            // Handle Audio
             const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (base64Audio && outputContextRef.current) {
-              try {
                 const audioData = base64ToUint8Array(base64Audio);
-                const audioBuffer = await decodeAudioData(
-                  audioData,
-                  outputContextRef.current,
-                  24000,
-                  1
-                );
+                const audioBuffer = await decodeAudioData(audioData, outputContextRef.current, 24000, 1);
                 playAudioChunk(audioBuffer);
-              } catch (err) {
-                console.error("Audio decode error", err);
-              }
-            }
-            
-            if (message.serverContent?.interrupted) {
-               audioQueueRef.current.forEach(src => {
-                 try { src.stop(); } catch (e) {}
-               });
-               audioQueueRef.current = [];
-               nextStartTimeRef.current = 0;
-               setIsSpeaking(false);
             }
           },
-          onclose: () => {
-            setStatus("DISCONNECTED");
-            setIsSpeaking(false);
-          },
-          onerror: (e) => {
-            console.error("Live Client Error:", e);
-            setStatus("ERROR");
-            setError("Connection failed. Check API Key.");
-            setIsSpeaking(false);
-          }
+          onclose: () => setStatus("DISCONNECTED"),
+          onerror: (e) => setStatus("ERROR")
         }
       });
       
       sessionRef.current = sessionPromise;
-      await sessionPromise;
 
     } catch (err) {
-      console.error("Initialization Error:", err);
+      console.error(err);
       setStatus("ERROR");
-      setError("Init failed.");
-      cleanup();
     }
   };
 
   const startAudioStream = (stream: MediaStream, sessionPromise: Promise<any>) => {
     if (!inputContextRef.current) return;
-
     const source = inputContextRef.current.createMediaStreamSource(stream);
     const processor = inputContextRef.current.createScriptProcessor(4096, 1, 1);
     
     processor.onaudioprocess = (e) => {
+      if (isMuted) return; // Mute Logic
       const inputData = e.inputBuffer.getChannelData(0);
       const pcmBlob = createPcmBlob(inputData);
-      
-      sessionPromise.then(session => {
-        session.sendRealtimeInput({ media: pcmBlob });
-      }).catch(err => {
-      });
+      sessionPromise.then(session => session.sendRealtimeInput({ media: pcmBlob })).catch(()=>{});
     };
 
     source.connect(processor);
     processor.connect(inputContextRef.current.destination);
-    
-    sourceRef.current = source;
     processorRef.current = processor;
   };
 
   const playAudioChunk = (buffer: AudioBuffer) => {
     if (!outputContextRef.current || !analyserRef.current) return;
-
     const ctx = outputContextRef.current;
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(analyserRef.current);
     
-    const currentTime = ctx.currentTime;
-    const startTime = Math.max(currentTime, nextStartTimeRef.current);
+    const startTime = Math.max(ctx.currentTime, nextStartTimeRef.current);
     source.start(startTime);
     nextStartTimeRef.current = startTime + buffer.duration;
     
     setIsSpeaking(true);
-    audioQueueRef.current.push(source);
-
     source.onended = () => {
-        if (ctx.currentTime >= nextStartTimeRef.current - 0.1) {
-            setIsSpeaking(false);
-        }
-        audioQueueRef.current = audioQueueRef.current.filter(s => s !== source);
+        if (ctx.currentTime >= nextStartTimeRef.current - 0.1) setIsSpeaking(false);
     };
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-full w-full relative overflow-hidden p-4">
-       {/* Ambient Glow */}
-       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] md:w-[500px] h-[300px] md:h-[500px] bg-brand-primary/10 rounded-full blur-[60px] md:blur-[100px] pointer-events-none"></div>
-
-      <div className="relative z-10 flex flex-col items-center gap-6 md:gap-10 w-full max-w-sm md:max-w-none">
-        <div className="relative">
-             <Visualizer 
+    <div className="absolute inset-0 bg-black z-50 flex flex-col">
+       
+       {/* 1. Main Video Area (The AI Girl) */}
+       <div className="flex-1 relative overflow-hidden">
+            <Visualizer 
                 analyser={analyserRef.current} 
-                isActive={status === "ONLINE"}
+                isActive={status === "CONNECTED"}
                 isSpeaking={isSpeaking}
-             />
-             {status === "ONLINE" && (
-                 <div className="absolute top-[-20px] left-1/2 -translate-x-1/2 text-brand-secondary font-bold tracking-[0.2em] text-[10px] md:text-xs animate-pulse whitespace-nowrap">
-                     LIVE CONNECTION
-                 </div>
-             )}
-        </div>
+            />
+            
+            {/* Top Bar Overlay */}
+            <div className="absolute top-0 left-0 w-full p-6 bg-gradient-to-b from-black/60 to-transparent flex justify-between items-start z-10">
+                <div className="flex flex-col">
+                    <h2 className="text-white text-xl font-bold tracking-wide drop-shadow-md">Siya ❤️</h2>
+                    <span className="text-white/70 text-xs tracking-wider uppercase animate-pulse">{status}</span>
+                </div>
+            </div>
 
-        <div className="text-center space-y-2 md:space-y-3">
-            <h2 className={`text-2xl md:text-4xl font-sans font-light tracking-wide text-white drop-shadow-lg`}>
-                {status === "ONLINE" ? (isSpeaking ? "Siya is speaking..." : "Listening...") : status}
-            </h2>
-            {error && <p className="text-red-400 font-mono text-xs md:text-sm">{error}</p>}
-        </div>
+            {/* Self View (Draggable-ish look) */}
+            <div className="absolute top-4 right-4 w-28 h-36 md:w-32 md:h-48 bg-black/50 rounded-xl overflow-hidden border border-white/20 shadow-2xl z-20">
+                <video 
+                    ref={selfVideoRef} 
+                    autoPlay 
+                    muted 
+                    playsInline 
+                    className="w-full h-full object-cover transform scale-x-[-1]" // Mirror effect
+                />
+            </div>
+       </div>
 
-        <div className="flex gap-4 md:gap-6 items-center flex-wrap justify-center">
-            <button
-              onClick={toggleScreenShare}
-              disabled={status !== "ONLINE"}
-              className={`
-                p-3 md:p-4 rounded-full transition-all transform hover:scale-110
-                ${isScreenSharing
-                    ? 'bg-amber-500 text-black shadow-[0_0_30px_rgba(245,158,11,0.5)]' 
-                    : 'bg-white/10 text-white hover:bg-white/20'}
-              `}
-              title="Share Screen"
+       {/* 2. Bottom Control Bar (Glassmorphism) */}
+       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-white/10 backdrop-blur-xl border border-white/10 rounded-[2rem] p-4 flex items-center justify-evenly shadow-2xl animate-fade-in z-30">
+            
+            {/* Mute Button */}
+            <button 
+                onClick={() => setIsMuted(!isMuted)}
+                className={`p-4 rounded-full transition-all active:scale-95 ${isMuted ? 'bg-white text-black' : 'bg-white/10 text-white hover:bg-white/20'}`}
             >
-              {isScreenSharing ? <MonitorOff size={20} className="md:w-6 md:h-6" /> : <Monitor size={20} className="md:w-6 md:h-6" />}
+                {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
             </button>
 
-            <button
-              onClick={onToggle}
-              className={`
-                px-6 py-3 md:px-8 md:py-4 rounded-full font-bold tracking-widest flex items-center gap-2 md:gap-3 transition-all transform hover:scale-105 shadow-2xl text-sm md:text-base
-                bg-red-500/80 hover:bg-red-500 text-white border border-red-400/50
-              `}
+            {/* End Call Button */}
+            <button 
+                onClick={onToggle}
+                className="p-5 bg-red-500 rounded-full text-white shadow-[0_0_20px_rgba(239,68,68,0.5)] hover:bg-red-600 transition-all active:scale-95 transform hover:scale-110"
             >
-              <MicOff size={18} className="md:w-5 md:h-5" /> END CALL
+                <PhoneOff size={32} fill="currentColor" />
             </button>
-        </div>
-      </div>
+
+            {/* Camera Toggle (Fake/Placeholder for visual) */}
+            <button className="p-4 rounded-full bg-white/10 text-white hover:bg-white/20 transition-all active:scale-95">
+                <Video size={24} />
+            </button>
+       </div>
     </div>
   );
 };

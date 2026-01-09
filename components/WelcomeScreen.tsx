@@ -53,11 +53,11 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
           try {
               const code = await sendOTP(identity);
               setGeneratedOtp(code);
-              // ALERT THE USER FOR DEMO
-              alert(`[DEMO] Your OTP is: ${code}`);
+              // OTP is now strictly sent via Email only. No alert.
               setStep('otp');
           } catch (e) {
-              setError("Failed to send OTP");
+              console.error(e);
+              setError("Failed to send OTP. Check your email configuration.");
           } finally {
               setLoading(false);
           }

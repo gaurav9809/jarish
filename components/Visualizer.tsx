@@ -10,12 +10,21 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const [imageLoaded, setImageLoaded] = useState(false);
+  
+  // Animation State
+  const blinkRef = useRef({ isBlinking: false, lastBlink: Date.now(), nextBlinkInterval: 3000 });
+  const breathRef = useRef(0);
 
   useEffect(() => {
     const img = new Image();
-    // Using a high-quality, front-facing AI portrait for better lip manipulation
-    // This image has a clear jawline which is essential for the cut mechanism
-    img.src = "https://img.freepik.com/free-photo/portrait-young-woman-with-natural-make-up_23-2149084942.jpg"; 
+    // High-quality Anime/3D Girl (Front Facing)
+    img.src = "https://img.freepik.com/premium-photo/cute-anime-girl-with-big-eyes-glasses_670382-120067.jpg"; 
+    
+    // Fallback if that fails (use a solid color or another reliable URL in real prod)
+    img.onerror = () => {
+        img.src = "https://img.freepik.com/premium-photo/3d-cartoon-character-cute-girl-avatar_1029469-242036.jpg";
+    };
+
     img.crossOrigin = "Anonymous";
     img.onload = () => setImageLoaded(true);
     imageRef.current = img;
@@ -32,115 +41,128 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
     const dataArray = new Uint8Array(analyser ? analyser.frequencyBinCount : 0);
 
     const draw = () => {
-      // Responsive Sizing
-      const rect = canvas.getBoundingClientRect();
-      if (canvas.width !== rect.width || canvas.height !== rect.height) {
-          canvas.width = rect.width;
-          canvas.height = rect.height;
+      // 1. Resize Canvas to Full Parent
+      const parent = canvas.parentElement;
+      if (parent) {
+          if (canvas.width !== parent.clientWidth || canvas.height !== parent.clientHeight) {
+            canvas.width = parent.clientWidth;
+            canvas.height = parent.clientHeight;
+          }
       }
-
       const width = canvas.width;
       const height = canvas.height;
       
-      // Clear canvas
       ctx.clearRect(0, 0, width, height);
 
-      // --- Audio Logic ---
-      let average = 0;
+      // 2. Audio Analysis (Volume)
+      let volume = 0;
       if (analyser && isActive) {
         analyser.getByteFrequencyData(dataArray);
-        // Focus on vocal frequencies (lower mid range)
-        const vocalRange = dataArray.slice(10, 50); 
+        // Focus on vocal frequencies (approx 300Hz - 3kHz range in bin terms)
+        const vocalRange = dataArray.slice(5, 40); 
         const sum = vocalRange.reduce((a, b) => a + b, 0);
-        average = sum / vocalRange.length;
+        volume = sum / vocalRange.length;
       }
+
+      // 3. Animation Variables
+      const now = Date.now();
       
-      // Calculate Lip/Jaw Movement
-      // We want the jaw to drop when volume is high
-      // Threshold: only move if average > 10 to avoid jitter
-      const jawDrop = (isSpeaking && average > 10) ? Math.min(average / 6, 25) : 0;
+      // Breathing (Sine wave scale)
+      breathRef.current += 0.02;
+      const breathScale = 1 + Math.sin(breathRef.current) * 0.005; // Subtle zoom in/out
+
+      // Blinking
+      if (!blinkRef.current.isBlinking && now - blinkRef.current.lastBlink > blinkRef.current.nextBlinkInterval) {
+          blinkRef.current.isBlinking = true;
+          blinkRef.current.lastBlink = now;
+      }
+      if (blinkRef.current.isBlinking && now - blinkRef.current.lastBlink > 150) { // Blink duration 150ms
+          blinkRef.current.isBlinking = false;
+          blinkRef.current.nextBlinkInterval = 2000 + Math.random() * 4000; // Random interval 2-6s
+      }
+
+      // Mouth Opening (Based on Volume)
+      // Smoother transition
+      const targetMouthOpen = (isSpeaking && volume > 5) ? Math.min(volume / 3, 25) : 0;
+      // We could lerp this for smoothness, but direct mapping feels more responsive for lip sync
+      const mouthOpen = targetMouthOpen;
 
       if (imageRef.current) {
-          // --- REALISTIC FACE RENDERING ---
+          const img = imageRef.current;
           
-          // Calculate Aspect Ratio to 'cover' the canvas
-          const imgRatio = imageRef.current.naturalWidth / imageRef.current.naturalHeight;
+          // Image Positioning (Cover)
+          const imgRatio = img.naturalWidth / img.naturalHeight;
           const canvasRatio = width / height;
-          let drawWidth, drawHeight, offsetX, offsetY;
+          let drawW, drawH, offX, offY;
 
           if (canvasRatio > imgRatio) {
-              drawWidth = width;
-              drawHeight = width / imgRatio;
-              offsetX = 0;
-              offsetY = (height - drawHeight) / 2;
+              drawW = width;
+              drawH = width / imgRatio;
+              offX = 0;
+              offY = (height - drawH) / 2;
           } else {
-              drawHeight = height;
-              drawWidth = height * imgRatio;
-              offsetX = (width - drawWidth) / 2;
-              offsetY = 0;
+              drawH = height;
+              drawW = height * imgRatio;
+              offX = (width - drawW) / 2;
+              offY = 0;
           }
 
-          // Define the "Jaw Line" relative to the drawn image height
-          // For a standard portrait, the mouth is usually around 60-70% down
-          const jawYRelative = 0.62; 
-          const jawSplitY = offsetY + (drawHeight * jawYRelative);
-
-          // 1. Draw Upper Face (Static)
-          // We crop the source image from top to the jaw line
-          const sourceJawY = imageRef.current.naturalHeight * jawYRelative;
-          
+          // Apply Breathing (Scale from center)
           ctx.save();
-          
-          // Clip to circle for aesthetics
-          ctx.beginPath();
-          ctx.arc(width/2, height/2, Math.min(width, height)/2, 0, Math.PI * 2);
-          ctx.clip();
+          ctx.translate(width/2, height/2);
+          ctx.scale(breathScale, breathScale);
+          ctx.translate(-width/2, -height/2);
 
-          // Draw Top Half
+          // ** LIP SYNC RENDERING **
+          // Split image at mouth line (approx 60% down for most anime avatars)
+          const splitFactor = 0.58; 
+          const sourceSplitY = img.naturalHeight * splitFactor;
+          const destSplitY = offY + (drawH * splitFactor);
+
+          // Draw Top Half (Head)
           ctx.drawImage(
-              imageRef.current,
-              0, 0, imageRef.current.naturalWidth, sourceJawY, // Source Top
-              offsetX, offsetY, drawWidth, (drawHeight * jawYRelative) // Dest Top
+              img,
+              0, 0, img.naturalWidth, sourceSplitY,
+              offX, offY, drawW, drawH * splitFactor
           );
 
-          // 2. Draw Lower Face (Dynamic Jaw)
-          // We draw the bottom half shifted down by 'jawDrop' pixels
-          ctx.drawImage(
-              imageRef.current,
-              0, sourceJawY, imageRef.current.naturalWidth, imageRef.current.naturalHeight - sourceJawY, // Source Bottom
-              offsetX, jawSplitY + jawDrop, drawWidth, (drawHeight * (1 - jawYRelative)) // Dest Bottom (Shifted)
-          );
-
-          // 3. Draw Inner Mouth (Background for the opening)
-          // When jaw drops, we need a dark void behind the lips
-          if (jawDrop > 1) {
-              ctx.globalCompositeOperation = 'destination-over';
-              ctx.fillStyle = '#3a1e1e'; // Dark fleshy color
-              ctx.fillRect(offsetX + (drawWidth * 0.3), jawSplitY, drawWidth * 0.4, jawDrop + 5);
-              ctx.globalCompositeOperation = 'source-over';
+          // Draw Blink (Eyelids)
+          if (blinkRef.current.isBlinking) {
+              ctx.fillStyle = '#e6b8a2'; // Skin tone approx
+              // Approx Eye positions (relative to drawW/drawH)
+              // Left Eye
+              const eyeY = offY + (drawH * 0.45);
+              const eyeH = drawH * 0.08;
+              const eyeW = drawW * 0.12;
+              
+              // Simple "closed eye" line or skin patch
+              // This is a rough approximation; for production, use a separate "blink" sprite
+              // For now, we skip drawing the skin patch to avoid looking weird, 
+              // and instead just don't do anything or draw a line.
+              // Let's draw a simple dark lash line to simulate closed eye
+              ctx.fillStyle = '#4a2c2a';
+              ctx.fillRect(offX + (drawW * 0.35), eyeY, eyeW, 3); // Left
+              ctx.fillRect(offX + (drawW * 0.53), eyeY, eyeW, 3); // Right
           }
-          
-          // 4. Offline Overlay
-          if (!isActive) {
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
-            ctx.fillRect(0, 0, width, height);
+
+          // Draw Bottom Half (Jaw) - Shifted down by mouthOpen
+          ctx.drawImage(
+              img,
+              0, sourceSplitY, img.naturalWidth, img.naturalHeight - sourceSplitY,
+              offX, destSplitY + mouthOpen, drawW, drawH * (1 - splitFactor)
+          );
+
+          // Draw Mouth Interior (Black/Dark Red background behind the jaw drop)
+          if (mouthOpen > 2) {
+             ctx.fillStyle = '#2c0e0e';
+             // Position rect between the split
+             const mouthW = drawW * 0.15;
+             const mouthX = offX + (drawW * 0.5) - (mouthW / 2);
+             ctx.fillRect(mouthX, destSplitY, mouthW, mouthOpen + 2);
           }
 
           ctx.restore();
       }
-
-      // --- Status Ring ---
-      const centerX = width / 2;
-      const centerY = height / 2;
-      const radius = Math.min(width, height) / 2 - 4;
-
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = isActive 
-        ? (isSpeaking ? '#ec4899' : '#8b5cf6') 
-        : '#334155';
-      ctx.stroke();
 
       animationId = requestAnimationFrame(draw);
     };
@@ -151,15 +173,22 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
   }, [analyser, isActive, isSpeaking, imageLoaded]);
 
   return (
-    <div className="relative flex items-center justify-center w-full aspect-square max-w-[300px] md:max-w-[400px]">
-        {/* Glow Effects */}
-        <div className={`absolute w-[80%] h-[80%] bg-brand-primary/20 rounded-full blur-[60px] animate-pulse ${isActive ? 'opacity-100' : 'opacity-0'} transition-opacity`}></div>
-        
+    <div className="w-full h-full relative bg-gray-900 overflow-hidden flex items-center justify-center">
+        {!imageLoaded && (
+             <div className="text-white text-xs animate-pulse">Loading Avatar...</div>
+        )}
         <canvas 
-        ref={canvasRef} 
-        className="w-full h-full relative z-10 rounded-full shadow-2xl"
-        style={{ willChange: 'contents' }} 
+            ref={canvasRef} 
+            className="w-full h-full object-cover"
         />
+        
+        {/* Status Badge */}
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/30 px-4 py-1.5 rounded-full backdrop-blur-md border border-white/10 shadow-lg">
+            <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-green-400 shadow-[0_0_10px_#4ade80]' : 'bg-red-500'}`}></div>
+            <span className="text-[10px] text-white/90 font-semibold tracking-widest uppercase">
+                {isActive ? "Connected" : "Reconnecting..."}
+            </span>
+        </div>
     </div>
   );
 };
