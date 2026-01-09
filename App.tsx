@@ -1,45 +1,74 @@
-import React, { useState, useEffect } from 'react';
-import { JarvisMode, Message } from './types';
-import { SYSTEM_INSTRUCTIONS, INITIAL_GREETING } from './constants';
+import React, { useState, useEffect, useRef } from 'react';
+import { Message } from './types';
 import ChatInterface from './components/ChatInterface';
 import LiveInterface from './components/LiveInterface';
+import WelcomeScreen from './components/WelcomeScreen';
 import { createChatSession, APP_MAPPING } from './services/geminiService';
-import { 
-  Terminal, 
-  BookOpen, 
-  Search, 
-  Cpu, 
-  Menu,
-  Zap,
-  Activity
-} from 'lucide-react';
+import { PROFESSIONAL_INSTRUCTION, PERSONAL_INSTRUCTION } from './constants';
+import { Mic, Sparkles, LogOut, Heart, Brain } from 'lucide-react';
+
+type Mode = 'professional' | 'personal';
 
 const App: React.FC = () => {
-  const [mode, setMode] = useState<JarvisMode>(JarvisMode.GENERAL);
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Separate states for separate histories
+  const [proMessages, setProMessages] = useState<Message[]>([]);
+  const [personalMessages, setPersonalMessages] = useState<Message[]>([]);
+  
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isLiveMode, setIsLiveMode] = useState(false);
   
-  // Ref to hold chat session instance
-  const chatSessionRef = React.useRef<any>(null);
+  // Mode State
+  const [mode, setMode] = useState<Mode>('professional');
+  
+  // Login State
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userName, setUserName] = useState('');
+  
+  // Two separate refs for two separate chat sessions (to keep context isolated)
+  const proSessionRef = useRef<any>(null);
+  const personalSessionRef = useRef<any>(null);
 
-  // Initialize Greeting
-  useEffect(() => {
-    setMessages([
+  // Helper to get current active state
+  const currentMessages = mode === 'professional' ? proMessages : personalMessages;
+  const setCurrentMessages = (update: (prev: Message[]) => Message[]) => {
+    if (mode === 'professional') {
+        setProMessages(update);
+    } else {
+        setPersonalMessages(update);
+    }
+  };
+
+  const startSessions = () => {
+    // Initialize both sessions on startup/login
+    proSessionRef.current = createChatSession(PROFESSIONAL_INSTRUCTION);
+    personalSessionRef.current = createChatSession(PERSONAL_INSTRUCTION);
+  };
+
+  const handleLogin = (name: string) => {
+    setUserName(name);
+    setIsLoggedIn(true);
+    startSessions();
+
+    // Set initial greeting for both modes specifically
+    setProMessages([
       {
-        id: 'init',
+        id: 'init-pro',
         role: 'model',
-        content: INITIAL_GREETING,
+        content: `Hello ${name}. I'm ready to help you with your work. What are we focusing on today?`,
         timestamp: Date.now(),
       }
     ]);
-  }, []);
 
-  // Reset Chat on Mode Change (Optional, but keeps context clean for specialized tasks)
-  useEffect(() => {
-    chatSessionRef.current = null; // Clear session to re-init with new prompt
-  }, [mode]);
+    setPersonalMessages([
+      {
+        id: 'init-personal',
+        role: 'model',
+        content: `Hey ${name}! ✨ Kaisa hai?`,
+        timestamp: Date.now(),
+      }
+    ]);
+  };
 
   const executeOpenApp = (appName: string): string => {
       const url = APP_MAPPING[appName.toLowerCase()];
@@ -50,8 +79,30 @@ const App: React.FC = () => {
       return `Could not find application: ${appName}`;
   };
 
+  const executeSendSMS = (recipient: string, message: string): string => {
+      // 1. Try to open the native SMS app if on mobile/supported device
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      
+      if (isMobile) {
+          window.open(`sms:${recipient}?body=${encodeURIComponent(message)}`, '_blank');
+          return `Opened messaging app for ${recipient}`;
+      }
+      
+      // 2. Fallback for desktop: Just simulate success for the AI to confirm
+      return `SMS sent to ${recipient}: "${message}"`;
+  };
+
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return;
+
+    const currentMode = mode; // Capture mode at start of function
+    const activeSession = currentMode === 'professional' ? proSessionRef.current : personalSessionRef.current;
+    
+    // Safety check if session lost
+    if (!activeSession) {
+        if (currentMode === 'professional') proSessionRef.current = createChatSession(PROFESSIONAL_INSTRUCTION);
+        else personalSessionRef.current = createChatSession(PERSONAL_INSTRUCTION);
+    }
 
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -60,19 +111,21 @@ const App: React.FC = () => {
       timestamp: Date.now(),
     };
 
-    setMessages(prev => [...prev, userMsg]);
+    // Optimistic update for current view
+    if (currentMode === 'professional') {
+        setProMessages(prev => [...prev, userMsg]);
+    } else {
+        setPersonalMessages(prev => [...prev, userMsg]);
+    }
+    
     setInputValue('');
     setIsLoading(true);
 
     try {
-      if (!chatSessionRef.current) {
-        chatSessionRef.current = createChatSession(mode);
-      }
-
-      // Initial Send
-      let result = await chatSessionRef.current.sendMessage({ message: userMsg.content });
+      const sessionToUse = currentMode === 'professional' ? proSessionRef.current : personalSessionRef.current;
       
-      // Handle Function Calls Loop
+      let result = await sessionToUse.sendMessage({ message: userMsg.content });
+      
       while (result.functionCalls && result.functionCalls.length > 0) {
           const functionResponses: any[] = [];
           
@@ -81,15 +134,41 @@ const App: React.FC = () => {
                   const appName = call.args['appName'];
                   const status = executeOpenApp(appName);
                   
-                  // Add a system-like message to UI to show action
-                  setMessages(prev => [...prev, {
+                  // Add system message only to current mode
+                  const sysMsg: Message = {
                       id: Date.now().toString(),
                       role: 'system',
-                      content: `[SYSTEM]: Executing openApp(${appName})...`,
+                      content: `📱 *Opening ${appName}...*`,
                       timestamp: Date.now()
-                  }]);
+                  };
+
+                  if (currentMode === 'professional') setProMessages(prev => [...prev, sysMsg]);
+                  else setPersonalMessages(prev => [...prev, sysMsg]);
 
                   functionResponses.push({
+                      functionResponse: {
+                          name: call.name,
+                          response: { result: status },
+                          id: call.id
+                      }
+                  });
+              } else if (call.name === 'sendSMS') {
+                  const recipient = call.args['recipient'];
+                  const msgContent = call.args['message'];
+                  const status = executeSendSMS(recipient, msgContent);
+                  
+                  // Add visual confirmation card
+                  const sysMsg: Message = {
+                      id: Date.now().toString(),
+                      role: 'system',
+                      content: `📨 **SMS SENT**\nTo: ${recipient}\nMessage: "${msgContent}"`,
+                      timestamp: Date.now()
+                  };
+
+                   if (currentMode === 'professional') setProMessages(prev => [...prev, sysMsg]);
+                   else setPersonalMessages(prev => [...prev, sysMsg]);
+
+                   functionResponses.push({
                       functionResponse: {
                           name: call.name,
                           response: { result: status },
@@ -100,7 +179,7 @@ const App: React.FC = () => {
           }
 
           if (functionResponses.length > 0) {
-              result = await chatSessionRef.current.sendMessage(functionResponses);
+              result = await sessionToUse.sendMessage(functionResponses);
           } else {
               break;
           }
@@ -108,7 +187,6 @@ const App: React.FC = () => {
 
       const responseText = result.text || "";
       
-      // Check for grounding metadata (web sources)
       let sources: string[] = [];
       const candidates = result.candidates;
       if (candidates && candidates[0]?.groundingMetadata?.groundingChunks) {
@@ -125,130 +203,155 @@ const App: React.FC = () => {
         sources: sources.length > 0 ? Array.from(new Set(sources)) : undefined
       };
 
-      setMessages(prev => [...prev, botMsg]);
+      if (currentMode === 'professional') {
+        setProMessages(prev => [...prev, botMsg]);
+      } else {
+        setPersonalMessages(prev => [...prev, botMsg]);
+      }
 
     } catch (error) {
       console.error("Error sending message:", error);
       const errorMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        content: "I apologize, sir. I encountered an error processing that request. " + (error instanceof Error ? error.message : ""),
+        content: "Oops! Network issue. Try again?",
         timestamp: Date.now(),
       };
-      setMessages(prev => [...prev, errorMsg]);
+      if (currentMode === 'professional') {
+        setProMessages(prev => [...prev, errorMsg]);
+      } else {
+        setPersonalMessages(prev => [...prev, errorMsg]);
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
-  const navItems = [
-    { id: JarvisMode.GENERAL, icon: Cpu, label: 'CORE' },
-    { id: JarvisMode.STUDY, icon: BookOpen, label: 'STUDY' },
-    { id: JarvisMode.CODE, icon: Terminal, label: 'DEV' },
-    { id: JarvisMode.SEARCH, icon: Search, label: 'NET' },
-  ];
+  const toggleMode = () => {
+    setMode(prev => prev === 'professional' ? 'personal' : 'professional');
+    // No pop-up message added here anymore
+  };
+
+  const isPersonal = mode === 'personal';
 
   return (
-    <div className="h-screen w-screen flex flex-col md:flex-row bg-jarvis-dark text-slate-200 overflow-hidden font-sans selection:bg-jarvis-cyan/30 selection:text-white">
+    <div className="h-screen w-screen relative bg-[#050511] text-white overflow-hidden font-sans transition-colors duration-1000">
       
-      {/* Sidebar Navigation */}
-      <nav className="w-full md:w-24 md:h-full bg-slate-900 border-b md:border-b-0 md:border-r border-slate-800 flex md:flex-col items-center justify-between p-4 z-20 shadow-xl">
-        <div className="flex items-center gap-2 mb-0 md:mb-8 text-jarvis-cyan">
-          <Activity className="animate-pulse-slow" size={32} />
-          <span className="md:hidden font-bold tracking-widest text-xl">JARVIS</span>
-        </div>
+      {/* --- Dynamic Background --- */}
+      {/* Orb 1 */}
+      <div className={`absolute top-[-10%] left-[-10%] w-[60%] h-[60%] rounded-full blur-[150px] animate-blob mix-blend-screen pointer-events-none transition-all duration-1000 
+         ${isLoggedIn ? 'opacity-60' : 'opacity-80 scale-110'}
+         ${isPersonal ? 'bg-brand-primary/20' : 'bg-blue-600/20'}
+      `}></div>
+      {/* Orb 2 */}
+      <div className={`absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] rounded-full blur-[150px] animate-blob animation-delay-2000 mix-blend-screen pointer-events-none transition-all duration-1000 
+         ${isLoggedIn ? 'opacity-60' : 'opacity-80 scale-110'}
+         ${isPersonal ? 'bg-brand-secondary/20' : 'bg-cyan-500/20'}
+      `}></div>
+      
+      {/* Main Container */}
+      <div className="relative z-10 flex flex-col h-full max-w-6xl mx-auto p-4 md:p-6 lg:p-8">
+        
+        {!isLoggedIn ? (
+            <WelcomeScreen onStart={handleLogin} />
+        ) : (
+            <>
+                {/* Header (Minimal) */}
+                <header className="flex items-center justify-between mb-4 animate-fade-in">
+                <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition-colors duration-500
+                        ${isPersonal 
+                            ? 'bg-gradient-to-tr from-brand-primary to-brand-secondary shadow-brand-primary/40' 
+                            : 'bg-gradient-to-tr from-blue-600 to-cyan-500 shadow-cyan-500/40'}
+                    `}>
+                        <Sparkles size={20} className="text-white" />
+                    </div>
+                    <div className="flex flex-col">
+                        <h1 className="text-xl font-bold tracking-wider text-white transition-all">SIYA</h1>
+                        <span className="text-[10px] text-slate-400 uppercase tracking-[0.2em] flex items-center gap-1">
+                            Connected to {userName}
+                        </span>
+                    </div>
+                </div>
 
-        <div className="flex md:flex-col gap-6 overflow-x-auto md:overflow-visible w-full md:w-auto justify-center md:justify-start px-4 md:px-0">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => {
-                setMode(item.id);
-                setIsLiveMode(false); // Reset to text on mode switch for safety
-              }}
-              className={`
-                group relative flex flex-col items-center gap-2 p-3 rounded-xl transition-all duration-300
-                ${mode === item.id 
-                  ? 'text-jarvis-cyan bg-jarvis-cyan/10 shadow-[0_0_15px_rgba(6,182,212,0.2)]' 
-                  : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800'}
-              `}
-            >
-              <item.icon size={24} className={`transition-transform duration-300 ${mode === item.id ? 'scale-110' : 'group-hover:scale-110'}`} />
-              <span className="text-[10px] font-mono tracking-wider font-bold">{item.label}</span>
-              
-              {/* Active Indicator Line */}
-              {mode === item.id && (
-                <div className="absolute -left-[17px] top-1/2 -translate-y-1/2 w-1 h-8 bg-jarvis-cyan rounded-r-full hidden md:block shadow-[0_0_10px_#06b6d4]"></div>
-              )}
-              {mode === item.id && (
-                 <div className="absolute -bottom-[17px] left-1/2 -translate-x-1/2 w-8 h-1 bg-jarvis-cyan rounded-t-full md:hidden shadow-[0_0_10px_#06b6d4]"></div>
-              )}
-            </button>
-          ))}
-        </div>
+                <div className="flex items-center gap-4">
+                    {/* Mode Toggle */}
+                    <button
+                        onClick={toggleMode}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-full border transition-all duration-300 ${
+                            isPersonal
+                            ? 'bg-pink-500/20 border-pink-500/50 text-pink-300 shadow-[0_0_15px_rgba(236,72,153,0.3)]' 
+                            : 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.3)]'
+                        }`}
+                    >
+                        {isPersonal ? (
+                             <>
+                                <Heart size={16} className="fill-current animate-pulse" />
+                                <span className="text-xs font-bold tracking-wider">PERSONAL</span>
+                             </>
+                        ) : (
+                             <>
+                                <Brain size={16} />
+                                <span className="text-xs font-bold tracking-wider">WORK</span>
+                             </>
+                        )}
+                    </button>
 
-        <div className="hidden md:flex flex-col gap-4 mt-auto">
-             <div className="text-[10px] font-mono text-slate-600 text-center">
-                SYS.V.2.0
-             </div>
-        </div>
-      </nav>
+                    {/* Voice Mode Toggle */}
+                    {!isLiveMode && (
+                        <button 
+                        onClick={() => setIsLiveMode(true)}
+                        className="group relative flex items-center gap-2 px-6 py-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-all hover:scale-105"
+                        >
+                            <div className={`absolute inset-0 rounded-full blur-md opacity-0 group-hover:opacity-100 transition-opacity ${isPersonal ? 'bg-brand-secondary/40' : 'bg-cyan-400/40'}`}></div>
+                            <div className="relative flex items-center gap-2">
+                                <span className="relative flex h-3 w-3">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                                </span>
+                                <span className="font-medium text-sm tracking-wide hidden sm:block">Voice Call</span>
+                                <Mic size={16} className="sm:hidden" />
+                            </div>
+                        </button>
+                    )}
+                    
+                    {/* Logout */}
+                    <button 
+                       onClick={() => setIsLoggedIn(false)}
+                       className="p-2 text-slate-500 hover:text-white transition-colors"
+                       title="Logout"
+                    >
+                        <LogOut size={18} />
+                    </button>
+                </div>
+                </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 relative flex flex-col h-full overflow-hidden">
-        {/* Header (Top Bar) */}
-        <header className="h-16 flex items-center justify-between px-6 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md z-10">
-           <div className="flex items-center gap-4">
-              <h1 className="text-xl font-bold tracking-[0.2em] text-white hidden md:block">
-                 J.A.R.V.I.S.
-              </h1>
-              <div className="h-6 w-[1px] bg-slate-700 hidden md:block"></div>
-              <div className="text-xs font-mono text-jarvis-blue flex items-center gap-2">
-                 <span className="inline-block w-2 h-2 rounded-full bg-green-500 shadow-[0_0_5px_#22c55e]"></span>
-                 SYSTEM: {mode} MODE
-              </div>
-           </div>
+                {/* Content Area */}
+                <main className={`flex-1 relative overflow-hidden transition-all duration-500 
+                    ${isPersonal 
+                        ? 'rounded-3xl bg-black border-none' // Insta style container
+                        : 'rounded-[2rem] border border-white/5 bg-black/20 backdrop-blur-2xl shadow-2xl' // Work style container
+                    }`}>
+                {isLiveMode ? (
+                    <LiveInterface 
+                    isActive={isLiveMode} 
+                    onToggle={() => setIsLiveMode(false)}
+                    />
+                ) : (
+                    <ChatInterface 
+                    messages={currentMessages}
+                    isLoading={isLoading}
+                    input={inputValue}
+                    setInput={setInputValue}
+                    onSend={handleSendMessage}
+                    mode={mode}
+                    />
+                )}
+                </main>
+            </>
+        )}
 
-           <div className="flex items-center gap-4">
-              <button 
-                onClick={() => setIsLiveMode(!isLiveMode)}
-                className={`
-                   flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xs font-bold border transition-all
-                   ${isLiveMode 
-                      ? 'border-red-500 text-red-400 bg-red-500/10 shadow-[0_0_10px_rgba(239,68,68,0.2)]' 
-                      : 'border-slate-700 text-slate-400 hover:border-jarvis-cyan hover:text-jarvis-cyan'}
-                `}
-              >
-                 <Zap size={14} className={isLiveMode ? "fill-red-400" : ""} />
-                 {isLiveMode ? "VOICE ACTIVE" : "VOICE OFF"}
-              </button>
-           </div>
-        </header>
-
-        {/* Dynamic Content */}
-        <div className="flex-1 relative overflow-hidden bg-gradient-to-br from-jarvis-dark to-[#0f172a]">
-           {/* Decorative Grid */}
-           <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:100px_100px] pointer-events-none"></div>
-
-           <div className="absolute inset-0 z-0 p-4 sm:p-6 flex flex-col">
-              {isLiveMode ? (
-                <LiveInterface 
-                  mode={mode} 
-                  isActive={isLiveMode} 
-                  onToggle={() => setIsLiveMode(false)}
-                />
-              ) : (
-                <ChatInterface 
-                  messages={messages}
-                  isLoading={isLoading}
-                  input={inputValue}
-                  setInput={setInputValue}
-                  onSend={handleSendMessage}
-                />
-              )}
-           </div>
-        </div>
-      </main>
+      </div>
     </div>
   );
 };

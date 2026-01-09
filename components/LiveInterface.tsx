@@ -1,18 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bot, Mic, MicOff, Monitor, MonitorOff, Activity } from 'lucide-react';
+import { MicOff, Monitor, MonitorOff } from 'lucide-react';
 import Visualizer from './Visualizer';
-import { getLiveClient, createPcmBlob, decodeAudioData, base64ToUint8Array, getTools, APP_MAPPING, blobToBase64 } from '../services/geminiService';
-import { LiveServerMessage } from '@google/genai';
-import { SYSTEM_INSTRUCTIONS } from '../constants';
-import { JarvisMode } from '../types';
+import { getLiveClient, createPcmBlob, decodeAudioData, base64ToUint8Array, openAppFunction, APP_MAPPING, blobToBase64 } from '../services/geminiService';
+import { LiveServerMessage, Modality } from '@google/genai';
+import { ADAPTIVE_SYSTEM_INSTRUCTION } from '../constants';
 
 interface LiveInterfaceProps {
-  mode: JarvisMode;
   isActive: boolean;
   onToggle: () => void;
 }
 
-const LiveInterface: React.FC<LiveInterfaceProps> = ({ mode, isActive, onToggle }) => {
+const LiveInterface: React.FC<LiveInterfaceProps> = ({ isActive, onToggle }) => {
   const [status, setStatus] = useState<string>("OFFLINE");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -40,7 +38,6 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ mode, isActive, onToggle 
   const sessionRef = useRef<Promise<any> | null>(null);
 
   useEffect(() => {
-    // Cleanup on unmount or when toggled off
     if (!isActive) {
       cleanup();
     } else {
@@ -50,7 +47,7 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ mode, isActive, onToggle 
   }, [isActive]);
 
   const cleanup = () => {
-    stopScreenShare(); // Ensure screen share stops
+    stopScreenShare();
 
     if (processorRef.current) {
       processorRef.current.disconnect();
@@ -73,7 +70,6 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ mode, isActive, onToggle 
       outputContextRef.current = null;
     }
     
-    // Stop playing audio
     audioQueueRef.current.forEach(source => {
       try { source.stop(); } catch(e) {}
     });
@@ -95,7 +91,6 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ mode, isActive, onToggle 
       return `Could not find app ${appName}`;
   };
 
-  // --- Screen Sharing Logic ---
   const toggleScreenShare = async () => {
     if (isScreenSharing) {
       stopScreenShare();
@@ -114,19 +109,15 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ mode, isActive, onToggle 
 
       setIsScreenSharing(true);
 
-      // Handle user stopping via browser UI
       stream.getVideoTracks()[0].onended = () => {
         stopScreenShare();
       };
 
-      // Start capture loop
       const ctx = screenCanvasRef.current.getContext('2d');
       if (ctx) {
-         // 1 FPS Capture
          screenIntervalRef.current = window.setInterval(async () => {
              if (!sessionRef.current) return;
              
-             // Draw video frame to canvas
              const width = videoRef.current.videoWidth;
              const height = videoRef.current.videoHeight;
              if (width === 0 || height === 0) return;
@@ -135,7 +126,6 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ mode, isActive, onToggle 
              screenCanvasRef.current.height = height;
              ctx.drawImage(videoRef.current, 0, 0, width, height);
 
-             // Convert to Blob -> Base64
              screenCanvasRef.current.toBlob(async (blob) => {
                  if (blob) {
                      const base64Data = await blobToBase64(blob);
@@ -145,7 +135,7 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ mode, isActive, onToggle 
                          });
                      });
                  }
-             }, 'image/jpeg', 0.6); // 0.6 quality to save bandwidth
+             }, 'image/jpeg', 0.6);
          }, 1000);
       }
 
@@ -164,44 +154,42 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ mode, isActive, onToggle 
         screenStreamRef.current.getTracks().forEach(track => track.stop());
         screenStreamRef.current = null;
     }
-    videoRef.current.srcObject = null;
+    if (videoRef.current.srcObject) {
+       videoRef.current.srcObject = null;
+    }
     setIsScreenSharing(false);
   };
-  // ----------------------------
 
   const initializeSession = async () => {
     try {
       setStatus("INITIALIZING...");
       setError(null);
 
-      // 1. Setup Audio Contexts
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       inputContextRef.current = new AudioContextClass({ sampleRate: 16000 });
       outputContextRef.current = new AudioContextClass({ sampleRate: 24000 });
 
-      // 2. Setup Analyser for Visuals (Output)
       const analyser = outputContextRef.current.createAnalyser();
       analyser.fftSize = 256;
       analyser.connect(outputContextRef.current.destination);
       analyserRef.current = analyser;
 
-      // 3. Get User Media
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      // 4. Connect to Gemini Live
       const client = getLiveClient();
-      const tools = getTools(mode);
+      // Only use function declarations for Live API; Google Search tool is not supported in Live
+      const tools = [{ functionDeclarations: [openAppFunction] }];
       
       const sessionPromise = client.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
         config: {
-          responseModalities: ['AUDIO'],
+          responseModalities: [Modality.AUDIO],
           speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }, // Female Voice
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
           },
-          systemInstruction: SYSTEM_INSTRUCTIONS[mode],
-          tools: tools.length > 0 ? tools : undefined,
+          systemInstruction: ADAPTIVE_SYSTEM_INSTRUCTION,
+          tools: tools,
         },
         callbacks: {
           onopen: () => {
@@ -209,14 +197,12 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ mode, isActive, onToggle 
             startAudioStream(stream, sessionPromise);
           },
           onmessage: async (message: LiveServerMessage) => {
-             // Handle Tool Calls (Function Calling)
              if (message.toolCall) {
                 for (const fc of message.toolCall.functionCalls) {
                     if (fc.name === 'openApp') {
                         const appName = fc.args['appName'] as string;
                         const result = executeOpenApp(appName);
                         
-                        // Send response back
                         sessionPromise.then(session => {
                             session.sendToolResponse({
                                 functionResponses: [{
@@ -230,7 +216,6 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ mode, isActive, onToggle 
                 }
              }
 
-             // Handle Audio Output
             const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (base64Audio && outputContextRef.current) {
               try {
@@ -247,7 +232,6 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ mode, isActive, onToggle 
               }
             }
             
-            // Handle Interruption
             if (message.serverContent?.interrupted) {
                audioQueueRef.current.forEach(src => {
                  try { src.stop(); } catch (e) {}
@@ -264,7 +248,7 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ mode, isActive, onToggle 
           onerror: (e) => {
             console.error("Live Client Error:", e);
             setStatus("ERROR");
-            setError("Check network.");
+            setError("Connection failed. Check API Key.");
             setIsSpeaking(false);
           }
         }
@@ -294,7 +278,6 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ mode, isActive, onToggle 
       sessionPromise.then(session => {
         session.sendRealtimeInput({ media: pcmBlob });
       }).catch(err => {
-         // Silently fail on send error
       });
     };
 
@@ -330,62 +313,54 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ mode, isActive, onToggle 
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-full w-full p-8 relative">
-       {/* Background Grid */}
-       <div className="absolute inset-0 bg-[linear-gradient(rgba(0,168,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(0,168,255,0.05)_1px,transparent_1px)] bg-[size:40px_40px] pointer-events-none"></div>
+    <div className="flex flex-col items-center justify-center h-full w-full relative overflow-hidden">
+       {/* Ambient Glow */}
+       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-brand-primary/10 rounded-full blur-[100px] pointer-events-none"></div>
 
-      <div className="relative z-10 flex flex-col items-center gap-8">
+      <div className="relative z-10 flex flex-col items-center gap-10">
         <div className="relative">
              <Visualizer 
                 analyser={analyserRef.current} 
                 isActive={status === "ONLINE"}
                 isSpeaking={isSpeaking}
              />
+             {status === "ONLINE" && (
+                 <div className="absolute top-[-20px] left-1/2 -translate-x-1/2 text-brand-secondary font-bold tracking-[0.2em] text-xs animate-pulse">
+                     LIVE CONNECTION
+                 </div>
+             )}
         </div>
 
-        <div className="text-center space-y-2">
-            <h2 className={`text-2xl font-sans tracking-widest font-bold ${status.includes("ERROR") ? "text-red-500" : "text-jarvis-cyan"}`}>
-                {status}
+        <div className="text-center space-y-3">
+            <h2 className={`text-4xl font-sans font-light tracking-wide text-white drop-shadow-lg`}>
+                {status === "ONLINE" ? (isSpeaking ? "Siya is speaking..." : "Listening...") : status}
             </h2>
-            <p className="text-slate-400 font-mono text-sm uppercase tracking-wider">
-               {status === "ONLINE" ? (isScreenSharing ? "WATCHING SCREEN..." : "LISTENING...") : "VOICE MODE"}
-            </p>
-            {error && <p className="text-red-400 font-mono text-xs max-w-xs mx-auto mt-2">{error}</p>}
+            {error && <p className="text-red-400 font-mono text-sm">{error}</p>}
         </div>
 
-        <div className="flex gap-4">
+        <div className="flex gap-6 items-center">
             <button
               onClick={toggleScreenShare}
               disabled={status !== "ONLINE"}
               className={`
-                px-6 py-3 rounded-full font-bold tracking-wider flex items-center gap-3 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed
+                p-4 rounded-full transition-all transform hover:scale-110
                 ${isScreenSharing
-                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.3)] hover:bg-amber-500/30' 
-                    : 'bg-slate-800 text-slate-300 border border-slate-600 hover:bg-slate-700'}
+                    ? 'bg-amber-500 text-black shadow-[0_0_30px_rgba(245,158,11,0.5)]' 
+                    : 'bg-white/10 text-white hover:bg-white/20'}
               `}
+              title="Share Screen"
             >
-              {isScreenSharing ? <MonitorOff size={20} /> : <Monitor size={20} />}
-              {isScreenSharing ? "STOP SCREEN" : "SHARE SCREEN"}
+              {isScreenSharing ? <MonitorOff size={24} /> : <Monitor size={24} />}
             </button>
 
             <button
               onClick={onToggle}
               className={`
-                px-8 py-3 rounded-full font-bold tracking-wider flex items-center gap-3 transition-all transform hover:scale-105
-                ${isActive 
-                    ? 'bg-red-500/20 text-red-400 border border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.3)] hover:bg-red-500/30' 
-                    : 'bg-jarvis-cyan/10 text-jarvis-cyan border border-jarvis-cyan shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:bg-jarvis-cyan/20'}
+                px-8 py-4 rounded-full font-bold tracking-widest flex items-center gap-3 transition-all transform hover:scale-105 shadow-2xl
+                bg-red-500/80 hover:bg-red-500 text-white border border-red-400/50
               `}
             >
-              {isActive ? (
-                <>
-                  <MicOff size={20} /> DEACTIVATE
-                </>
-              ) : (
-                <>
-                  <Mic size={20} /> ACTIVATE
-                </>
-              )}
+              <MicOff size={20} /> END CALL
             </button>
         </div>
       </div>

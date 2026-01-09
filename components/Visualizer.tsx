@@ -10,11 +10,10 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
 
-  // Load Anime Image
   useEffect(() => {
     const img = new Image();
-    // Using a reliable Anime-style placeholder
-    img.src = "https://cdn.pixabay.com/photo/2023/12/15/21/53/anime-8451276_1280.jpg";
+    // A more aesthetic, soft anime/digital art style avatar
+    img.src = "https://cdn.pixabay.com/photo/2022/12/01/04/43/girl-7628308_1280.jpg"; 
     img.crossOrigin = "Anonymous";
     imageRef.current = img;
   }, []);
@@ -45,75 +44,77 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
         average = sum / dataArray.length;
       }
       
-      // --- Effects ---
-      // Scale based on audio volume
-      const scale = 1 + (average / 255) * 0.1; 
-      
-      // Glow intensity based on speaking status
-      const glowBlur = isSpeaking ? 20 + (average / 5) : (isActive ? 10 : 0);
-      const glowColor = isSpeaking ? 'rgba(0, 240, 255, 0.8)' : 'rgba(0, 168, 255, 0.3)';
+      // --- Smooth Pulsing Effect ---
+      const pulse = Math.sin(Date.now() / 1000) * 5;
+      const speakScale = isSpeaking ? (average / 50) : 0;
+      const baseScale = 1 + speakScale;
 
-      // --- Draw Image ---
       ctx.save();
       ctx.translate(centerX, centerY);
-      ctx.scale(scale, scale);
       
-      // Clip path for circular avatar
+      // 1. Outer Glow (Soft Halo)
+      if (isActive) {
+          const gradient = ctx.createRadialGradient(0, 0, 100, 0, 0, 160 + average);
+          gradient.addColorStop(0, 'rgba(139, 92, 246, 0.2)'); // Violet
+          gradient.addColorStop(1, 'rgba(236, 72, 153, 0.0)'); // Pink fade
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+          ctx.arc(0, 0, 180 + average, 0, Math.PI * 2);
+          ctx.fill();
+      }
+
+      // 2. Avatar Container
+      ctx.scale(baseScale, baseScale);
+      
+      // Border Circle
       ctx.beginPath();
-      ctx.arc(0, 0, 130, 0, Math.PI * 2, true);
+      ctx.arc(0, 0, 120, 0, Math.PI * 2, true);
+      ctx.lineWidth = isActive ? 4 : 2;
+      ctx.strokeStyle = isActive ? (isSpeaking ? '#ec4899' : '#8b5cf6') : '#4b5563';
+      ctx.stroke();
       ctx.closePath();
+      
+      // Clip for Image
+      ctx.beginPath();
+      ctx.arc(0, 0, 115, 0, Math.PI * 2, true);
       ctx.clip();
 
-      // Fix: Check naturalWidth to ensure image is not in 'broken' state
       if (imageRef.current && imageRef.current.complete && imageRef.current.naturalWidth > 0) {
-        // Draw the anime girl
-        // Applying a slight blue tint if active
-        if (!isActive) ctx.filter = 'grayscale(100%) brightness(0.5)';
-        else ctx.filter = `brightness(${1 + average/200})`;
-
-        ctx.drawImage(imageRef.current, -130, -130, 260, 260);
+        ctx.drawImage(imageRef.current, -115, -115, 230, 230);
+        
+        // Overlay tint based on state
+        if (!isActive) {
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.6)'; // Darken when offline
+            ctx.fill();
+        }
       } else {
-        // Fallback if image fails or is loading
-        ctx.fillStyle = '#0f172a';
+        ctx.fillStyle = '#1e1b4b';
         ctx.fill();
-        ctx.fillStyle = '#00f0ff';
-        ctx.font = '20px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText("INITIALIZING...", 0, 5);
       }
+
       ctx.restore();
 
-      // --- Draw Rings/Tech UI Overlays ---
-      ctx.save();
-      ctx.translate(centerX, centerY);
-
-      // Outer Glow Ring
-      if (isActive) {
-        ctx.beginPath();
-        ctx.arc(0, 0, 135 + (average / 10), 0, Math.PI * 2);
-        ctx.strokeStyle = glowColor;
-        ctx.lineWidth = 3;
-        ctx.shadowBlur = glowBlur;
-        ctx.shadowColor = '#00f0ff';
-        ctx.stroke();
-
-        // Rotating Tech Ring
-        ctx.rotate(Date.now() / 2000);
-        ctx.beginPath();
-        ctx.arc(0, 0, 145, 0, Math.PI * 1.5);
-        ctx.strokeStyle = 'rgba(0, 240, 255, 0.3)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      } else {
-         // Offline Ring
-         ctx.beginPath();
-         ctx.arc(0, 0, 135, 0, Math.PI * 2);
-         ctx.strokeStyle = '#334155';
-         ctx.lineWidth = 2;
-         ctx.stroke();
+      // 3. Audio Frequency Bars (Circular)
+      if (isActive && analyser) {
+          ctx.save();
+          ctx.translate(centerX, centerY);
+          const bars = 40;
+          const step = (Math.PI * 2) / bars;
+          
+          for (let i = 0; i < bars; i++) {
+              const value = dataArray[i * 2] || 0;
+              const barHeight = (value / 255) * 40;
+              
+              ctx.rotate(step);
+              
+              ctx.fillStyle = isSpeaking ? '#ec4899' : '#8b5cf6';
+              ctx.globalAlpha = 0.6;
+              ctx.beginPath();
+              ctx.roundRect(130, -2, barHeight + 5, 4, 2);
+              ctx.fill();
+          }
+          ctx.restore();
       }
-      
-      ctx.restore();
 
       animationId = requestAnimationFrame(draw);
     };
@@ -124,12 +125,18 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
   }, [analyser, isActive, isSpeaking]);
 
   return (
-    <canvas 
-      ref={canvasRef} 
-      width={400} 
-      height={400} 
-      className="w-[300px] h-[300px] sm:w-[400px] sm:h-[400px] transition-all duration-300"
-    />
+    <div className="relative flex items-center justify-center">
+        {/* Decorative background blobs */}
+        <div className={`absolute w-64 h-64 bg-brand-primary/30 rounded-full blur-3xl mix-blend-screen animate-blob ${isActive ? 'opacity-100' : 'opacity-0'} transition-opacity duration-1000`}></div>
+        <div className={`absolute w-64 h-64 bg-brand-secondary/30 rounded-full blur-3xl mix-blend-screen animate-blob animation-delay-2000 ${isActive ? 'opacity-100' : 'opacity-0'} transition-opacity duration-1000`}></div>
+
+        <canvas 
+        ref={canvasRef} 
+        width={400} 
+        height={400} 
+        className="w-[300px] h-[300px] sm:w-[350px] sm:h-[350px] relative z-10"
+        />
+    </div>
   );
 };
 

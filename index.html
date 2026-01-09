@@ -3,28 +3,42 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>JARVIS</title>
+    <title>SIYA - Virtual Companion</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
     <script>
       tailwind.config = {
         theme: {
           extend: {
             fontFamily: {
-              sans: ['Rajdhani', 'sans-serif'],
+              sans: ['Outfit', 'sans-serif'],
               mono: ['JetBrains Mono', 'monospace'],
             },
             colors: {
-              jarvis: {
-                cyan: '#00f0ff',
-                blue: '#00a8ff',
-                dark: '#050a14',
-                panel: '#0a1525',
+              brand: {
+                dark: '#0f0c29',
+                purple: '#302b63',
+                teal: '#24243e',
+                primary: '#8b5cf6', // Violet
+                secondary: '#ec4899', // Pink
+                accent: '#06b6d4', // Cyan
               }
             },
             animation: {
-              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-              'spin-slow': 'spin 8s linear infinite',
+              'blob': 'blob 7s infinite',
+              'fade-in': 'fadeIn 0.5s ease-out forwards',
+            },
+            keyframes: {
+              blob: {
+                '0%': { transform: 'translate(0px, 0px) scale(1)' },
+                '33%': { transform: 'translate(30px, -50px) scale(1.1)' },
+                '66%': { transform: 'translate(-20px, 20px) scale(0.9)' },
+                '100%': { transform: 'translate(0px, 0px) scale(1)' },
+              },
+              fadeIn: {
+                '0%': { opacity: '0', transform: 'translateY(10px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              }
             }
           }
         }
@@ -32,30 +46,41 @@
     </script>
     <style>
       body {
-        background-color: #050a14;
-        color: #e0f2fe;
-        overflow: hidden; /* App handles scrolling */
+        background-color: #0f0c29;
+        color: #fff;
+        overflow: hidden;
       }
-      /* Custom scrollbar for webkit */
+      /* Modern Scrollbar */
       ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
+        width: 6px;
       }
       ::-webkit-scrollbar-track {
-        background: #0a1525;
+        background: transparent;
       }
       ::-webkit-scrollbar-thumb {
-        background: #00a8ff;
-        border-radius: 4px;
+        background: rgba(139, 92, 246, 0.3);
+        border-radius: 10px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #00f0ff;
+        background: rgba(139, 92, 246, 0.6);
       }
-      .jarvis-glow {
-        text-shadow: 0 0 10px rgba(0, 240, 255, 0.7);
+      
+      .glass-panel {
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
       }
-      .jarvis-border {
-        box-shadow: 0 0 15px rgba(0, 168, 255, 0.3), inset 0 0 10px rgba(0, 168, 255, 0.1);
+      
+      .glass-message-user {
+        /* Default fallback, overridden in inline style for themeing */
+        background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+        box-shadow: 0 4px 15px rgba(236, 72, 153, 0.3);
+      }
+      
+      .glass-message-bot {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.05);
       }
     </style>
   <script type="importmap">

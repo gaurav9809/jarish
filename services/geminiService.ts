@@ -1,6 +1,5 @@
-import { GoogleGenAI, Chat, Type, FunctionDeclaration, Schema } from "@google/genai";
-import { JarvisMode } from "../types";
-import { SYSTEM_INSTRUCTIONS } from "../constants";
+import { GoogleGenAI, Chat, Type, FunctionDeclaration } from "@google/genai";
+import { PROFESSIONAL_INSTRUCTION } from "../constants";
 
 // --- App Mapping & Tools ---
 
@@ -19,7 +18,7 @@ export const APP_MAPPING: Record<string, string> = {
   "facebook": "https://www.facebook.com"
 };
 
-const openAppFunction: FunctionDeclaration = {
+export const openAppFunction: FunctionDeclaration = {
   name: 'openApp',
   description: 'Opens a specified application or website in a new tab. Supported apps: YouTube, Google, Spotify, Gmail, GitHub, WhatsApp, Netflix, Twitter, Instagram, LinkedIn, Facebook.',
   parameters: {
@@ -34,25 +33,35 @@ const openAppFunction: FunctionDeclaration = {
   },
 };
 
-export const getTools = (mode: JarvisMode) => {
-  const tools: any[] = [];
-  
-  // Add Google Search to General and Search modes
-  if (mode === JarvisMode.SEARCH || mode === JarvisMode.GENERAL) {
-    tools.push({ googleSearch: {} });
-  }
+export const sendSMSFunction: FunctionDeclaration = {
+  name: 'sendSMS',
+  description: 'Sends an SMS message to a specific phone number. Use this when the user explicitly asks to send a text or SMS.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      recipient: {
+        type: Type.STRING,
+        description: 'The phone number or name of the recipient.',
+      },
+      message: {
+        type: Type.STRING,
+        description: 'The content of the SMS message.',
+      },
+    },
+    required: ['recipient', 'message'],
+  },
+};
 
-  // Add Open App tool to General mode
-  if (mode === JarvisMode.GENERAL) {
-    tools.push({ functionDeclarations: [openAppFunction] });
-  }
-
-  return tools;
+export const getTools = () => {
+  // All tools are always available now
+  return [
+    { googleSearch: {} },
+    { functionDeclarations: [openAppFunction, sendSMSFunction] }
+  ];
 };
 
 // --- Live API Helpers ---
 
-// Audio Encoding/Decoding for Live API
 export function base64ToUint8Array(base64: string): Uint8Array {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -78,7 +87,6 @@ export function blobToBase64(blob: Blob): Promise<string> {
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64data = reader.result as string;
-      // remove data url part (e.g. "data:image/jpeg;base64,")
       resolve(base64data.split(',')[1]);
     };
     reader.onerror = reject;
@@ -117,20 +125,22 @@ export function createPcmBlob(data: Float32Array): { data: string; mimeType: str
   };
 }
 
-// Instantiate client dynamically to ensure latest API Key
-export const createChatSession = (mode: JarvisMode): Chat => {
+// Instantiate client dynamically
+export const createChatSession = (customInstruction?: string): Chat => {
   const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) ? process.env.API_KEY : '';
   const ai = new GoogleGenAI({ apiKey });
   
-  // Use Flash for everything to ensure speed ("bhot time lag rha h" fix)
   const modelId = 'gemini-3-flash-preview'; 
-  const tools = getTools(mode);
+  const tools = getTools();
+  
+  // Default to professional if no instruction provided, though App.tsx should always provide one
+  const instruction = customInstruction || PROFESSIONAL_INSTRUCTION;
 
   return ai.chats.create({
     model: modelId,
     config: {
-      systemInstruction: SYSTEM_INSTRUCTIONS[mode],
-      tools: tools.length > 0 ? tools : undefined,
+      systemInstruction: instruction,
+      tools: tools,
     },
   });
 };
