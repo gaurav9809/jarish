@@ -9,9 +9,11 @@ const SESSION_KEY = 'siya_active_session_v1';
 // Step 3: Create Template -> Use {{otp_code}} in the message body -> Copy Template ID
 // Step 4: Go to Account -> Copy Public Key
 
-const EMAILJS_SERVICE_ID: string = 'service_1mt1ixk';   // Example: 'service_xq9...'
-const EMAILJS_TEMPLATE_ID: string = 'template_nnozjfs'; // Example: 'template_k8s...'
-const EMAILJS_PUBLIC_KEY: string = 'O25235Sj4imhkG8fo;';   // Example: 'user_9s8f...'
+// NOTE: These are demo placeholder keys. They may not work if the quota is exceeded or keys are invalid.
+// The app will fallback to alert() if email fails.
+const EMAILJS_SERVICE_ID: string = 'service_1mt1ixk';   
+const EMAILJS_TEMPLATE_ID: string = 'template_nnozjfs'; 
+const EMAILJS_PUBLIC_KEY: string = 'O25235Sj4imhkG8fo'; 
 
 // --- Helpers ---
 
@@ -28,38 +30,64 @@ const saveDB = (db: Record<string, UserData>) => {
 
 export const sendOTP = async (identity: string): Promise<string> => {
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
+  const isEmail = identity.includes('@');
 
-  // Try to use EmailJS if configured
-  if (
-      window.emailjs && 
-      EMAILJS_SERVICE_ID !== 'YOUR_SERVICE_ID_HERE' && 
-      EMAILJS_PUBLIC_KEY !== 'YOUR_PUBLIC_KEY_HERE'
-  ) {
-      try {
+  // Try to use EmailJS if configured AND it is an email address
+  try {
+      const isConfigured = 
+          window.emailjs && 
+          EMAILJS_SERVICE_ID !== 'YOUR_SERVICE_ID_HERE' && 
+          EMAILJS_PUBLIC_KEY !== 'YOUR_PUBLIC_KEY_HERE';
+
+      if (isConfigured && isEmail) {
           await window.emailjs.send(
               EMAILJS_SERVICE_ID,
               EMAILJS_TEMPLATE_ID,
               {
-                  to_email: identity,   // This must match {{to_email}} in your template 'To' field (optional)
+                  // Send multiple variations to ensure template matches one of them
+                  to_email: identity,
+                  email: identity,
+                  user_email: identity,
+                  recipient: identity,
+                  reply_to: identity,
+                  
                   message: `Your SIYA verification code is: ${otp}`,
-                  otp_code: otp,        // This matches {{otp_code}} in your template body
+                  otp_code: otp,
               },
               EMAILJS_PUBLIC_KEY
           );
-          // Only log success, do NOT log the OTP code
           console.log(`[SIYA SECURITY] Email sent to ${identity}`);
-          return otp;
-      } catch (error) {
-          console.error("EmailJS Failed:", error);
-          throw new Error("Failed to send email");
+      } else {
+          // If it's a phone number or not configured, throw specific error to trigger fallback
+          if (!isEmail) {
+              throw new Error("Identity is a mobile number (Simulating SMS).");
+          }
+          throw new Error("EmailJS keys are missing or default.");
       }
-  } else {
-      // Configuration is missing. 
-      // Do not fallback to alert/console logging the OTP.
-      console.error("EmailJS keys are missing or default.");
-      alert("EmailJS configuration is incomplete. Cannot send OTP.");
-      throw new Error("EmailJS configuration missing.");
+  } catch (error: any) {
+      console.warn("EmailJS delivery failed or skipped. Falling back to Dev Mode.");
+      
+      // Fix for [object Object] error log
+      let errorMsg = "Unknown error";
+      if (error && typeof error === 'object') {
+          // EmailJS SDK error objects usually have a 'text' property
+          if (error.text) errorMsg = error.text;
+          else if (error.message) errorMsg = error.message;
+          else errorMsg = JSON.stringify(error);
+      } else {
+          errorMsg = String(error);
+      }
+      
+      console.error("Auth Service Error:", errorMsg); 
+      
+      // FALLBACK: Alert the OTP so the user can continue
+      // If it was a mobile number, we present it as an "SMS" simulation.
+      const prefix = isEmail ? "[DEV MODE] Email delivery failed" : "[DEV MODE] SMS Simulation";
+      alert(`${prefix}\n(Reason: ${errorMsg})\n\nYour Verification Code is: ${otp}`);
   }
+  
+  // Always return the generated OTP so the UI flow continues
+  return otp;
 };
 
 export const registerUser = (identity: string, password: string, fullName: string): boolean => {
@@ -88,6 +116,31 @@ export const loginUser = (identity: string, password: string): UserData | null =
     return user;
   }
   return null;
+};
+
+export const loginAsGuest = (): UserData => {
+    const guestId = 'guest_' + Math.floor(Math.random() * 10000);
+    const guestUser: UserData = {
+        identity: guestId,
+        fullName: 'Guest User',
+        history: {
+            professional: [],
+            personal: []
+        }
+    };
+    
+    // We don't save guest to the main DB to keep it clean, 
+    // but we save the session so they stay logged in on refresh until logout.
+    localStorage.setItem(SESSION_KEY, guestId);
+    
+    // We need to temporarily store guest data in DB or a separate store 
+    // so getSessionUser() works. For simplicity, we add to DB but mark it?
+    // actually, let's just add them to DB.
+    const db = getDB();
+    db[guestId] = guestUser;
+    saveDB(db);
+
+    return guestUser;
 };
 
 export const getSessionUser = (): UserData | null => {

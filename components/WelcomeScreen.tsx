@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Sparkles, ArrowRight, Lock, Fingerprint, Mail, Smartphone, User, Eye, EyeOff, ShieldCheck } from 'lucide-react';
-import { sendOTP, registerUser, loginUser } from '../services/storageService';
+import { Sparkles, ArrowRight, Lock, Fingerprint, Mail, Smartphone, User, Eye, EyeOff, ShieldCheck, UserCheck } from 'lucide-react';
+import { sendOTP, registerUser, loginUser, loginAsGuest } from '../services/storageService';
 
 interface WelcomeScreenProps {
   onStart: (user: any) => void;
@@ -86,6 +86,15 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
           }
           setLoading(false);
       }, 800);
+  };
+
+  const handleGuestAccess = () => {
+      setLoading(true);
+      setTimeout(() => {
+          const guestUser = loginAsGuest();
+          onStart(guestUser);
+          setLoading(false);
+      }, 600);
   };
 
   const resetForm = (mode: boolean) => {
@@ -243,8 +252,20 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
             )}
         </button>
 
+        {/* Guest Login Option */}
+        {step === 'credentials' && (
+             <button 
+                onClick={handleGuestAccess}
+                disabled={loading}
+                className="w-full mt-3 py-3 rounded-xl border border-white/10 hover:bg-white/5 text-slate-300 text-sm font-medium tracking-wide transition-all flex items-center justify-center gap-2 hover:text-white active:scale-[0.98]"
+            >
+                <UserCheck size={16} />
+                Continue as Guest
+            </button>
+        )}
+
         {/* Footer */}
-        <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-8 uppercase tracking-widest opacity-60">
+        <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-6 uppercase tracking-widest opacity-60">
             <Fingerprint size={12} />
             {isLogin ? 'Secure Session' : 'Encrypted Registration'}
         </div>

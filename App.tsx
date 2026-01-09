@@ -29,6 +29,7 @@ const App: React.FC = () => {
   const personalSessionRef = useRef<any>(null);
 
   useEffect(() => {
+    // Check for existing session on mount
     const sessionUser = getSessionUser();
     if (sessionUser) {
         setUserIdentity(sessionUser.identity);
@@ -193,7 +194,8 @@ const App: React.FC = () => {
   const isPersonal = mode === 'personal';
 
   return (
-    <div className="h-[100dvh] w-full relative bg-[#050511] text-white overflow-hidden font-sans">
+    // Use dvh (Dynamic Viewport Height) for mobile browser address bar compatibility
+    <div className="h-[100dvh] w-full relative bg-[#050511] text-white font-sans flex flex-col overflow-hidden">
       
       {/* Dynamic Background */}
       <div className={`absolute inset-0 transition-opacity duration-1000 ${isPersonal ? 'bg-[#120a11]' : 'bg-[#050511]'}`}>
@@ -201,8 +203,9 @@ const App: React.FC = () => {
           <div className={`absolute bottom-[-20%] right-[-20%] w-[80%] h-[80%] rounded-full blur-[100px] mix-blend-screen opacity-20 ${isPersonal ? 'bg-purple-700' : 'bg-cyan-900'}`}></div>
       </div>
       
-      {/* Main Container - Full Height Flex */}
-      <div className="relative z-10 flex flex-col h-full w-full max-w-5xl mx-auto md:p-6 transition-all duration-500">
+      {/* Main Content Area */}
+      {/* We remove md:p-6 from the container and instead center it responsibly on desktop */}
+      <div className="relative z-10 flex flex-col w-full h-full max-w-5xl mx-auto transition-all duration-500 md:h-[95dvh] md:my-auto md:rounded-2xl md:overflow-hidden md:border md:border-white/5 md:shadow-2xl">
         
         {!isLoggedIn ? (
             <WelcomeScreen onStart={handleLoginSuccess} />
@@ -212,32 +215,32 @@ const App: React.FC = () => {
                     <LiveInterface isActive={isLiveMode} onToggle={() => setIsLiveMode(false)} />
                 ) : (
                     <>
-                        {/* Header */}
-                        <header className="flex shrink-0 items-center justify-between p-4 pb-2">
+                        {/* Header: Flex-none ensures it never shrinks or disappears */}
+                        <header className="flex-none flex items-center justify-between p-4 pb-2 z-20 backdrop-blur-sm bg-black/10">
                             <div className="flex items-center gap-3">
                                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-lg transition-colors duration-500 ${isPersonal ? 'bg-gradient-to-br from-pink-500 to-purple-600' : 'bg-gradient-to-br from-blue-600 to-cyan-500'}`}>
                                     <Sparkles size={20} className="text-white fill-white/20" />
                                 </div>
                                 <div className="flex flex-col justify-center">
                                     <h1 className="text-lg font-bold tracking-tight leading-none">SIYA</h1>
-                                    <span className="text-[10px] text-white/50 tracking-wider uppercase">{userName}</span>
+                                    <span className="text-[10px] text-white/50 tracking-wider uppercase truncate max-w-[100px]">{userName}</span>
                                 </div>
                             </div>
 
                             <div className="flex items-center gap-2">
-                                <button onClick={toggleMode} className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold tracking-wide transition-all duration-300 ${isPersonal ? 'bg-pink-500/20 text-pink-300 ring-1 ring-pink-500/50' : 'bg-cyan-500/10 text-cyan-300 ring-1 ring-cyan-500/30'}`}>
-                                    {isPersonal ? <><Heart size={12} className="fill-current animate-pulse" /> GF MODE</> : <><Brain size={12} /> WORK</>}
+                                <button onClick={toggleMode} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 ${isPersonal ? 'bg-pink-500/20 text-pink-300 ring-1 ring-pink-500/50' : 'bg-cyan-500/10 text-cyan-300 ring-1 ring-cyan-500/30'}`}>
+                                    {isPersonal ? <><Heart size={12} className="fill-current animate-pulse" /> GF</> : <><Brain size={12} /> WORK</>}
                                 </button>
                                 
                                 {/* Video Call Button - Highlighted in Personal Mode */}
                                 <button 
                                     onClick={() => setIsLiveMode(true)} 
-                                    className={`p-2.5 rounded-full transition-all active:scale-95 ${isPersonal ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow-lg shadow-pink-600/30 animate-pulse' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}
+                                    className={`p-2 rounded-full transition-all active:scale-95 ${isPersonal ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow-lg shadow-pink-600/30 animate-pulse' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}
                                 >
                                      {isPersonal ? <Video size={18} fill="currentColor" /> : <Mic size={18} />}
                                 </button>
                                 
-                                <button onClick={handleLogout} className="p-2.5 text-slate-500 hover:text-white bg-transparent hover:bg-white/5 rounded-full transition-colors">
+                                <button onClick={handleLogout} className="p-2 text-slate-500 hover:text-white bg-transparent hover:bg-white/5 rounded-full transition-colors">
                                     <LogOut size={18} />
                                 </button>
                             </div>
@@ -245,13 +248,13 @@ const App: React.FC = () => {
 
                         {/* Error Banner */}
                         {configError && (
-                            <div className="mx-4 mb-2 bg-red-500/10 border border-red-500/30 rounded-lg p-2.5 text-xs text-red-200 flex items-center gap-2">
+                            <div className="flex-none mx-4 mb-2 bg-red-500/10 border border-red-500/30 rounded-lg p-2.5 text-xs text-red-200 flex items-center gap-2">
                                 <AlertTriangle size={14} /> {configError}
                             </div>
                         )}
 
-                        {/* Main Chat Area - Taller and Cleaner */}
-                        <main className="flex-1 overflow-hidden relative mx-0 md:mx-4 mb-0 md:mb-4">
+                        {/* Main Chat Area - flex-1 min-h-0 ensures scrolling works inside flex container */}
+                        <main className="flex-1 min-h-0 relative flex flex-col">
                             <ChatInterface 
                                 messages={currentMessages}
                                 isLoading={isLoading}
