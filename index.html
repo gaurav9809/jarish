@@ -6,6 +6,16 @@
     <title>SIYA - Virtual Companion</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+    <!-- EmailJS SDK -->
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <script type="text/javascript">
+      (function(){
+         // Initialize EmailJS immediately
+         // NOTE: Replace 'YOUR_PUBLIC_KEY' here if you prefer init in HTML, 
+         // but we will handle init in storageService.ts for better control.
+         if (window.emailjs) window.emailjs.init("YOUR_PUBLIC_KEY"); 
+      })();
+    </script>
     <script>
       // Polyfill for process.env
       window.process = window.process || { env: { NODE_ENV: 'production' } };

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 interface VisualizerProps {
   analyser: AnalyserNode | null;
@@ -9,27 +9,30 @@ interface VisualizerProps {
 const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const [imageLoaded, setImageLoaded] = useState(false);
 
   useEffect(() => {
     const img = new Image();
-    // A more aesthetic, soft anime/digital art style avatar
-    img.src = "https://cdn.pixabay.com/photo/2022/12/01/04/43/girl-7628308_1280.jpg"; 
+    // Using a high-quality, front-facing AI portrait for better lip manipulation
+    // This image has a clear jawline which is essential for the cut mechanism
+    img.src = "https://img.freepik.com/free-photo/portrait-young-woman-with-natural-make-up_23-2149084942.jpg"; 
     img.crossOrigin = "Anonymous";
+    img.onload = () => setImageLoaded(true);
     imageRef.current = img;
   }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !imageLoaded) return;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
     let animationId: number;
     const dataArray = new Uint8Array(analyser ? analyser.frequencyBinCount : 0);
 
     const draw = () => {
-      // Dynamic Sizing based on computed style (responsive)
+      // Responsive Sizing
       const rect = canvas.getBoundingClientRect();
       if (canvas.width !== rect.width || canvas.height !== rect.height) {
           canvas.width = rect.width;
@@ -38,99 +41,106 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
 
       const width = canvas.width;
       const height = canvas.height;
-      const centerX = width / 2;
-      const centerY = height / 2;
       
-      // Calculate responsive radius
-      const baseRadius = Math.min(width, height) * 0.3; // 30% of smallest dimension
-      
+      // Clear canvas
       ctx.clearRect(0, 0, width, height);
 
-      // --- Audio Data Processing ---
+      // --- Audio Logic ---
       let average = 0;
       if (analyser && isActive) {
         analyser.getByteFrequencyData(dataArray);
-        const sum = dataArray.reduce((a, b) => a + b, 0);
-        average = sum / dataArray.length;
+        // Focus on vocal frequencies (lower mid range)
+        const vocalRange = dataArray.slice(10, 50); 
+        const sum = vocalRange.reduce((a, b) => a + b, 0);
+        average = sum / vocalRange.length;
       }
       
-      // --- Smooth Pulsing Effect ---
-      // Reduce math operations if not active
-      const pulse = Math.sin(Date.now() / 1000) * 5;
-      const speakScale = isSpeaking ? (average / 50) : 0;
-      const baseScale = 1 + speakScale;
+      // Calculate Lip/Jaw Movement
+      // We want the jaw to drop when volume is high
+      // Threshold: only move if average > 10 to avoid jitter
+      const jawDrop = (isSpeaking && average > 10) ? Math.min(average / 6, 25) : 0;
 
-      ctx.save();
-      ctx.translate(centerX, centerY);
-      
-      // 1. Outer Glow (Soft Halo) - Optimization: Only draw if active
-      if (isActive) {
-          const gradient = ctx.createRadialGradient(0, 0, baseRadius * 0.8, 0, 0, baseRadius * 1.4 + average);
-          gradient.addColorStop(0, 'rgba(139, 92, 246, 0.2)'); // Violet
-          gradient.addColorStop(1, 'rgba(236, 72, 153, 0.0)'); // Pink fade
-          ctx.fillStyle = gradient;
-          ctx.beginPath();
-          ctx.arc(0, 0, baseRadius * 1.5 + average, 0, Math.PI * 2);
-          ctx.fill();
-      }
-
-      // 2. Avatar Container
-      ctx.scale(baseScale, baseScale);
-      
-      // Border Circle
-      ctx.beginPath();
-      ctx.arc(0, 0, baseRadius, 0, Math.PI * 2, true);
-      ctx.lineWidth = isActive ? 4 : 2;
-      ctx.strokeStyle = isActive ? (isSpeaking ? '#ec4899' : '#8b5cf6') : '#4b5563';
-      ctx.stroke();
-      ctx.closePath();
-      
-      // Clip for Image
-      ctx.beginPath();
-      ctx.arc(0, 0, baseRadius - 5, 0, Math.PI * 2, true);
-      ctx.clip();
-
-      if (imageRef.current && imageRef.current.complete && imageRef.current.naturalWidth > 0) {
-        // Draw image covering the circle
-        const size = baseRadius * 2;
-        ctx.drawImage(imageRef.current, -baseRadius, -baseRadius, size, size);
-        
-        // Overlay tint based on state
-        if (!isActive) {
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.6)'; // Darken when offline
-            ctx.fill();
-        }
-      } else {
-        ctx.fillStyle = '#1e1b4b';
-        ctx.fill();
-      }
-
-      ctx.restore();
-
-      // 3. Audio Frequency Bars (Circular)
-      if (isActive && analyser) {
-          ctx.save();
-          ctx.translate(centerX, centerY);
-          const bars = 40;
-          const step = (Math.PI * 2) / bars;
+      if (imageRef.current) {
+          // --- REALISTIC FACE RENDERING ---
           
-          for (let i = 0; i < bars; i++) {
-              const value = dataArray[i * 2] || 0;
-              const barHeight = (value / 255) * (baseRadius * 0.35); // Bar height relative to radius
-              
-              ctx.rotate(step);
-              
-              ctx.fillStyle = isSpeaking ? '#ec4899' : '#8b5cf6';
-              ctx.globalAlpha = 0.6;
-              ctx.beginPath();
-              
-              // Simple rect for performance compatibility
-              ctx.rect(baseRadius + 10, -2, barHeight + 5, 4); 
-              
-              ctx.fill();
+          // Calculate Aspect Ratio to 'cover' the canvas
+          const imgRatio = imageRef.current.naturalWidth / imageRef.current.naturalHeight;
+          const canvasRatio = width / height;
+          let drawWidth, drawHeight, offsetX, offsetY;
+
+          if (canvasRatio > imgRatio) {
+              drawWidth = width;
+              drawHeight = width / imgRatio;
+              offsetX = 0;
+              offsetY = (height - drawHeight) / 2;
+          } else {
+              drawHeight = height;
+              drawWidth = height * imgRatio;
+              offsetX = (width - drawWidth) / 2;
+              offsetY = 0;
           }
+
+          // Define the "Jaw Line" relative to the drawn image height
+          // For a standard portrait, the mouth is usually around 60-70% down
+          const jawYRelative = 0.62; 
+          const jawSplitY = offsetY + (drawHeight * jawYRelative);
+
+          // 1. Draw Upper Face (Static)
+          // We crop the source image from top to the jaw line
+          const sourceJawY = imageRef.current.naturalHeight * jawYRelative;
+          
+          ctx.save();
+          
+          // Clip to circle for aesthetics
+          ctx.beginPath();
+          ctx.arc(width/2, height/2, Math.min(width, height)/2, 0, Math.PI * 2);
+          ctx.clip();
+
+          // Draw Top Half
+          ctx.drawImage(
+              imageRef.current,
+              0, 0, imageRef.current.naturalWidth, sourceJawY, // Source Top
+              offsetX, offsetY, drawWidth, (drawHeight * jawYRelative) // Dest Top
+          );
+
+          // 2. Draw Lower Face (Dynamic Jaw)
+          // We draw the bottom half shifted down by 'jawDrop' pixels
+          ctx.drawImage(
+              imageRef.current,
+              0, sourceJawY, imageRef.current.naturalWidth, imageRef.current.naturalHeight - sourceJawY, // Source Bottom
+              offsetX, jawSplitY + jawDrop, drawWidth, (drawHeight * (1 - jawYRelative)) // Dest Bottom (Shifted)
+          );
+
+          // 3. Draw Inner Mouth (Background for the opening)
+          // When jaw drops, we need a dark void behind the lips
+          if (jawDrop > 1) {
+              ctx.globalCompositeOperation = 'destination-over';
+              ctx.fillStyle = '#3a1e1e'; // Dark fleshy color
+              ctx.fillRect(offsetX + (drawWidth * 0.3), jawSplitY, drawWidth * 0.4, jawDrop + 5);
+              ctx.globalCompositeOperation = 'source-over';
+          }
+          
+          // 4. Offline Overlay
+          if (!isActive) {
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.7)';
+            ctx.fillRect(0, 0, width, height);
+          }
+
           ctx.restore();
       }
+
+      // --- Status Ring ---
+      const centerX = width / 2;
+      const centerY = height / 2;
+      const radius = Math.min(width, height) / 2 - 4;
+
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = isActive 
+        ? (isSpeaking ? '#ec4899' : '#8b5cf6') 
+        : '#334155';
+      ctx.stroke();
 
       animationId = requestAnimationFrame(draw);
     };
@@ -138,18 +148,17 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
     draw();
 
     return () => cancelAnimationFrame(animationId);
-  }, [analyser, isActive, isSpeaking]);
+  }, [analyser, isActive, isSpeaking, imageLoaded]);
 
   return (
     <div className="relative flex items-center justify-center w-full aspect-square max-w-[300px] md:max-w-[400px]">
-        {/* Decorative background blobs */}
-        <div className={`absolute w-[70%] h-[70%] bg-brand-primary/30 rounded-full blur-3xl mix-blend-screen animate-blob ${isActive ? 'opacity-100' : 'opacity-0'} transition-opacity duration-1000`}></div>
-        <div className={`absolute w-[70%] h-[70%] bg-brand-secondary/30 rounded-full blur-3xl mix-blend-screen animate-blob animation-delay-2000 ${isActive ? 'opacity-100' : 'opacity-0'} transition-opacity duration-1000`}></div>
-
+        {/* Glow Effects */}
+        <div className={`absolute w-[80%] h-[80%] bg-brand-primary/20 rounded-full blur-[60px] animate-pulse ${isActive ? 'opacity-100' : 'opacity-0'} transition-opacity`}></div>
+        
         <canvas 
         ref={canvasRef} 
-        className="w-full h-full relative z-10"
-        style={{ willChange: 'transform' }} 
+        className="w-full h-full relative z-10 rounded-full shadow-2xl"
+        style={{ willChange: 'contents' }} 
         />
     </div>
   );

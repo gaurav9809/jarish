@@ -3,6 +3,16 @@ import { UserData, Message } from '../types';
 const USERS_KEY = 'siya_users_db_v1';
 const SESSION_KEY = 'siya_active_session_v1';
 
+// --- CONFIGURATION ---
+// Step 1: Go to https://www.emailjs.com/ (Sign Up Free)
+// Step 2: Add Service (Gmail) -> Copy Service ID
+// Step 3: Create Template -> Use {{otp_code}} in the message body -> Copy Template ID
+// Step 4: Go to Account -> Copy Public Key
+
+const EMAILJS_SERVICE_ID = 'service_1mt1ixk';   // Example: 'service_xq9...'
+const EMAILJS_TEMPLATE_ID = 'template_nnozjfs'; // Example: 'template_k8s...'
+const EMAILJS_PUBLIC_KEY = 'O25235Sj4imhkG8fo;'   // Example: 'user_9s8f...'
+
 // --- Helpers ---
 
 const getDB = (): Record<string, UserData> => {
@@ -17,16 +27,44 @@ const saveDB = (db: Record<string, UserData>) => {
 // --- Auth Services ---
 
 export const sendOTP = async (identity: string): Promise<string> => {
-  // SIMULATION: In a real app, this calls an SMS/Email API.
-  // Here we generate a random 4-digit code and alert it.
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const otp = Math.floor(1000 + Math.random() * 9000).toString();
-      // For demo purposes, we return the OTP to be displayed or logged
-      console.log(`[SIYA SECURITY] OTP for ${identity}: ${otp}`);
-      resolve(otp);
-    }, 1000);
-  });
+  const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+  // Try to use EmailJS if configured
+  if (
+      window.emailjs && 
+      EMAILJS_SERVICE_ID !== 'YOUR_SERVICE_ID_HERE' && 
+      EMAILJS_PUBLIC_KEY !== 'YOUR_PUBLIC_KEY_HERE'
+  ) {
+      try {
+          await window.emailjs.send(
+              EMAILJS_SERVICE_ID,
+              EMAILJS_TEMPLATE_ID,
+              {
+                  to_email: identity,   // This must match {{to_email}} in your template 'To' field (optional)
+                  message: `Your SIYA verification code is: ${otp}`,
+                  otp_code: otp,        // This matches {{otp_code}} in your template body
+              },
+              EMAILJS_PUBLIC_KEY
+          );
+          console.log(`[SIYA SECURITY] Email sent to ${identity}`);
+          return otp;
+      } catch (error) {
+          console.error("EmailJS Failed:", error);
+          // Fallback to console if email fails
+          console.log(`[SIYA SECURITY] Fallback OTP (Check Console): ${otp}`);
+          alert(`[Developer Mode] Email send failed. OTP is: ${otp}`);
+          return otp;
+      }
+  } else {
+      // Simulation mode (Fallback if keys are missing)
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          console.log(`[SIYA SECURITY] Simulation OTP for ${identity}: ${otp}`);
+          alert(`[Demo Mode] EmailJS keys not set. Your OTP is: ${otp}`);
+          resolve(otp);
+        }, 1000);
+      });
+  }
 };
 
 export const registerUser = (identity: string, password: string, fullName: string): boolean => {
@@ -81,3 +119,10 @@ export const saveChatHistory = (
     saveDB(db);
   }
 };
+
+// Types definition for window object
+declare global {
+    interface Window {
+        emailjs: any;
+    }
+}
