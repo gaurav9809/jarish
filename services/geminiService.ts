@@ -123,10 +123,22 @@ export function createPcmBlob(data: Float32Array): { data: string; mimeType: str
   };
 }
 
+// Safely retrieve API Key without causing ReferenceError in browsers
+const getApiKey = (): string => {
+  try {
+    if (typeof process !== 'undefined' && process.env) {
+      return process.env.API_KEY || "";
+    }
+    return "";
+  } catch (e) {
+    return "";
+  }
+};
+
 // Instantiate client
 export const createChatSession = (customInstruction?: string): Chat => {
-  // Use process.env.API_KEY directly to ensure build tools can replace it
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = getApiKey();
+  const ai = new GoogleGenAI({ apiKey });
   
   const modelId = 'gemini-3-flash-preview'; 
   const tools = getTools();
@@ -143,6 +155,7 @@ export const createChatSession = (customInstruction?: string): Chat => {
 };
 
 export const getLiveClient = () => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = getApiKey();
+  const ai = new GoogleGenAI({ apiKey });
   return ai.live;
 };

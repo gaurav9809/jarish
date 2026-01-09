@@ -230,11 +230,12 @@ const App: React.FC = () => {
       if (error.message) {
         if (error.message.includes('API key') || error.message.includes('400')) {
            errorText = "SETUP ERROR: API Key is invalid or missing. Please check your project settings.";
-           setConfigError("Invalid API Key");
+           setConfigError("Invalid API Key. Check Console.");
         } else if (error.message.includes('404')) {
            errorText = "Model Error: The AI model is currently unavailable.";
         } else if (error.message.includes('403')) {
-           errorText = "Access Error: Your API key doesn't have permission for this model.";
+           errorText = "Access Error: Your API key doesn't have permission for this model (403).";
+           setConfigError("API Key Access Denied (403)");
         } else {
            errorText = `Error: ${error.message}`;
         }
@@ -359,8 +360,12 @@ const App: React.FC = () => {
                     <div className="bg-red-500/10 border border-red-500/40 rounded-xl p-3 mb-4 flex items-center gap-3 animate-fade-in">
                         <AlertTriangle className="text-red-400" size={20} />
                         <div className="flex flex-col">
-                            <span className="text-red-300 font-bold text-sm">Deployment Configuration Error</span>
-                            <span className="text-red-400/80 text-xs">API Key is missing in your environment variables. Please check your project settings.</span>
+                            <span className="text-red-300 font-bold text-sm">System Configuration Error</span>
+                            <span className="text-red-400/80 text-xs">
+                                {configError.includes("403") 
+                                 ? "Access Denied: Your API Key is valid but cannot access this model." 
+                                 : "API Key is missing or invalid in deployment settings."}
+                            </span>
                         </div>
                     </div>
                 )}
