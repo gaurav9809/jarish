@@ -7,3 +7,19 @@ export interface Message {
 }
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+export interface UserData {
+  identity: string; // Email or Mobile acting as ID
+  password?: string; // Simple hash/string for local demo
+  fullName: string;
+  history: {
+    professional: Message[];
+    personal: Message[];
+  };
+}
+
+export interface AuthResponse {
+  success: boolean;
+  message: string;
+  user?: UserData;
+}

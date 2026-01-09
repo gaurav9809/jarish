@@ -4,6 +4,7 @@ import ChatInterface from './components/ChatInterface';
 import LiveInterface from './components/LiveInterface';
 import WelcomeScreen from './components/WelcomeScreen';
 import { createChatSession, APP_MAPPING } from './services/geminiService';
+import { getSessionUser, logoutUser, saveChatHistory } from './services/storageService';
 import { PROFESSIONAL_INSTRUCTION, PERSONAL_INSTRUCTION } from './constants';
 import { Mic, Sparkles, LogOut, Heart, Brain, AlertTriangle } from 'lucide-react';
 
@@ -23,6 +24,7 @@ const App: React.FC = () => {
   
   // Login State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userIdentity, setUserIdentity] = useState(''); // ID to save data against
   const [userName, setUserName] = useState('');
   
   // Error State for API Key
@@ -31,6 +33,36 @@ const App: React.FC = () => {
   // Two separate refs for two separate chat sessions (to keep context isolated)
   const proSessionRef = useRef<any>(null);
   const personalSessionRef = useRef<any>(null);
+
+  // --- PERSISTENCE LOGIC ---
+
+  // 1. Check for active session on load
+  useEffect(() => {
+    const sessionUser = getSessionUser();
+    if (sessionUser) {
+        setUserIdentity(sessionUser.identity);
+        setUserName(sessionUser.fullName);
+        setProMessages(sessionUser.history.professional || []);
+        setPersonalMessages(sessionUser.history.personal || []);
+        setIsLoggedIn(true);
+        startSessions(); // Init AI
+    }
+  }, []);
+
+  // 2. Save Professional Messages when they change
+  useEffect(() => {
+    if (isLoggedIn && userIdentity) {
+        saveChatHistory(userIdentity, 'professional', proMessages);
+    }
+  }, [proMessages, isLoggedIn, userIdentity]);
+
+  // 3. Save Personal Messages when they change
+  useEffect(() => {
+    if (isLoggedIn && userIdentity) {
+        saveChatHistory(userIdentity, 'personal', personalMessages);
+    }
+  }, [personalMessages, isLoggedIn, userIdentity]);
+
 
   // Helper to get current active state
   const currentMessages = mode === 'professional' ? proMessages : personalMessages;
@@ -56,29 +88,43 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLogin = (name: string) => {
-    setUserName(name);
+  const handleLoginSuccess = (user: any) => {
+    setUserName(user.fullName);
+    setUserIdentity(user.identity);
+    // Load history if exists
+    if (user.history) {
+        setProMessages(user.history.professional || []);
+        setPersonalMessages(user.history.personal || []);
+    }
+    
+    // If it's a completely new user with empty history, add greeting
+    if (!user.history || (user.history.professional.length === 0 && user.history.personal.length === 0)) {
+        setProMessages([{
+            id: 'init-pro',
+            role: 'model',
+            content: `Hello ${user.fullName}. I'm ready to help you with your work. What are we focusing on today?`,
+            timestamp: Date.now(),
+        }]);
+
+        setPersonalMessages([{
+            id: 'init-personal',
+            role: 'model',
+            content: `Hey ${user.fullName}! ✨ Kaisa hai?`,
+            timestamp: Date.now(),
+        }]);
+    }
+    
     setIsLoggedIn(true);
     startSessions();
+  };
 
-    // Set initial greeting for both modes specifically
-    setProMessages([
-      {
-        id: 'init-pro',
-        role: 'model',
-        content: `Hello ${name}. I'm ready to help you with your work. What are we focusing on today?`,
-        timestamp: Date.now(),
-      }
-    ]);
-
-    setPersonalMessages([
-      {
-        id: 'init-personal',
-        role: 'model',
-        content: `Hey ${name}! ✨ Kaisa hai?`,
-        timestamp: Date.now(),
-      }
-    ]);
+  const handleLogout = () => {
+      logoutUser();
+      setIsLoggedIn(false);
+      setProMessages([]);
+      setPersonalMessages([]);
+      setUserIdentity('');
+      setUserName('');
   };
 
   const executeOpenApp = (appName: string): string => {
@@ -307,7 +353,7 @@ const App: React.FC = () => {
       <div className="relative z-10 flex flex-col h-full max-w-6xl mx-auto p-2 md:p-6 lg:p-8">
         
         {!isLoggedIn ? (
-            <WelcomeScreen onStart={handleLogin} />
+            <WelcomeScreen onStart={handleLoginSuccess} />
         ) : (
             <>
                 {/* Header (Minimal) - Better scaling on mobile */}
@@ -370,7 +416,7 @@ const App: React.FC = () => {
                     
                     {/* Logout */}
                     <button 
-                       onClick={() => setIsLoggedIn(false)}
+                       onClick={handleLogout}
                        className="p-1.5 md:p-2 text-slate-500 hover:text-white transition-colors"
                        title="Logout"
                     >
