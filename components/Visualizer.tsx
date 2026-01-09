@@ -110,7 +110,14 @@ const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking 
               ctx.fillStyle = isSpeaking ? '#ec4899' : '#8b5cf6';
               ctx.globalAlpha = 0.6;
               ctx.beginPath();
-              ctx.roundRect(130, -2, barHeight + 5, 4, 2);
+              
+              // TypeScript safe check for roundRect
+              if (typeof (ctx as any).roundRect === 'function') {
+                  (ctx as any).roundRect(130, -2, barHeight + 5, 4, 2);
+              } else {
+                  ctx.rect(130, -2, barHeight + 5, 4); // Fallback for older browsers
+              }
+              
               ctx.fill();
           }
           ctx.restore();
