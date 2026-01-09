@@ -6,6 +6,7 @@ import WelcomeScreen from './components/WelcomeScreen';
 import { createChatSession, APP_MAPPING } from './services/geminiService';
 import { PROFESSIONAL_INSTRUCTION, PERSONAL_INSTRUCTION } from './constants';
 import { Mic, Sparkles, LogOut, Heart, Brain } from 'lucide-react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 type Mode = 'professional' | 'personal';
 
@@ -352,6 +353,7 @@ const App: React.FC = () => {
         )}
 
       </div>
+      <SpeedInsights />
     </div>
   );
 };
