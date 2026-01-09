@@ -53,9 +53,9 @@ export const sendSMSFunction: FunctionDeclaration = {
 };
 
 export const getTools = () => {
-  // All tools are always available now
+  // Strict rule: googleSearch cannot be used with other tools. 
+  // We prioritize Function Declarations (App Control) for this assistant.
   return [
-    { googleSearch: {} },
     { functionDeclarations: [openAppFunction, sendSMSFunction] }
   ];
 };
@@ -128,12 +128,16 @@ export function createPcmBlob(data: Float32Array): { data: string; mimeType: str
 // Instantiate client dynamically
 export const createChatSession = (customInstruction?: string): Chat => {
   const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) ? process.env.API_KEY : '';
+  
+  if (!apiKey) {
+      console.warn("API Key is missing! Ensure process.env.API_KEY is set.");
+  }
+
   const ai = new GoogleGenAI({ apiKey });
   
   const modelId = 'gemini-3-flash-preview'; 
   const tools = getTools();
   
-  // Default to professional if no instruction provided, though App.tsx should always provide one
   const instruction = customInstruction || PROFESSIONAL_INSTRUCTION;
 
   return ai.chats.create({

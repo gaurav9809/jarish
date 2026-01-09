@@ -209,12 +209,28 @@ const App: React.FC = () => {
         setPersonalMessages(prev => [...prev, botMsg]);
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error sending message:", error);
+      
+      let errorText = "Oops! Something went wrong.";
+      if (error.message) {
+        if (error.message.includes('API key') || error.message.includes('API_KEY')) {
+           errorText = "Configuration Error: API Key is invalid or missing.";
+        } else if (error.message.includes('404')) {
+           errorText = "Model Error: The AI model is currently unavailable (404).";
+        } else if (error.message.includes('403')) {
+           errorText = "Access Error: Your API key doesn't have permission for this model (403).";
+        } else if (error.message.includes('400')) {
+           errorText = "Request Error: Bad Request (400). Please refresh.";
+        } else {
+           errorText = `Error: ${error.message}`;
+        }
+      }
+
       const errorMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        content: "Oops! Network issue. Try again?",
+        content: errorText,
         timestamp: Date.now(),
       };
       if (currentMode === 'professional') {
@@ -229,7 +245,6 @@ const App: React.FC = () => {
 
   const toggleMode = () => {
     setMode(prev => prev === 'professional' ? 'personal' : 'professional');
-    // No pop-up message added here anymore
   };
 
   const isPersonal = mode === 'personal';
