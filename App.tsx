@@ -5,15 +5,15 @@ import ChatInterface from './components/ChatInterface';
 import LiveInterface from './components/LiveInterface';
 import WelcomeScreen from './components/WelcomeScreen';
 import CallScreen from './components/CallScreen';
-import { createLocalChatSession } from './services/localAiService';
-import { getSessionUser, logoutUser, saveChatHistory, saveCallLog, updateMessageReaction } from './services/storageService';
+import { createChatSession } from './services/geminiService';
+import { getSessionUser, logoutUser, saveCallLog, updateMessageReaction } from './services/storageService';
 import { 
   PROFESSIONAL_INSTRUCTION, 
   PERSONAL_PHASE_FRIEND, 
   PERSONAL_PHASE_DEVELOPING, 
   PERSONAL_PHASE_LOVER 
 } from './constants';
-import { LogOut, Zap, Mic, Briefcase, Heart } from 'lucide-react';
+import { LogOut, Zap, Mic, Briefcase, Heart, Sparkles } from 'lucide-react';
 
 type Mode = 'professional' | 'personal';
 
@@ -56,7 +56,9 @@ const App: React.FC = () => {
   }, [isLoggedIn, personalMessages.length, mode]);
 
   const startSessions = () => {
-    if (!proSessionRef.current) proSessionRef.current = createLocalChatSession(PROFESSIONAL_INSTRUCTION);
+    if (!proSessionRef.current) {
+        proSessionRef.current = createChatSession(PROFESSIONAL_INSTRUCTION);
+    }
     
     const msgCount = personalMessages.filter(m => !m.isCall).length;
     let newInstruction = PERSONAL_PHASE_FRIEND;
@@ -65,7 +67,7 @@ const App: React.FC = () => {
 
     if (newInstruction !== currentPersonalInstructionRef.current || !personalSessionRef.current) {
         currentPersonalInstructionRef.current = newInstruction;
-        personalSessionRef.current = createLocalChatSession(newInstruction);
+        personalSessionRef.current = createChatSession(newInstruction);
     }
   };
 
@@ -95,8 +97,9 @@ const App: React.FC = () => {
           contextPrefix = `[User reacted with ${lastBotMsg.reaction}] `;
       }
 
-      const result = await activeSession.sendMessage({ message: contextPrefix + userMsg.content });
-      let responseText = result.text || "";
+      // Send message to Gemini
+      const response = await activeSession.sendMessage({ message: contextPrefix + userMsg.content });
+      let responseText = response.text || "";
       
       const reactMatch = responseText.match(/\[REACT:\s*([\uD800-\uDBFF][\uDC00-\uDFFF]|\S+)\]/);
       if (reactMatch) {
@@ -116,7 +119,7 @@ const App: React.FC = () => {
       else setPersonalMessages(prev => [...prev, botMsg]);
 
     } catch (error: any) {
-      console.error("Neural Error:", error);
+      console.error("Gemini Engine Error:", error);
     } finally {
       setIsLoading(false);
     }
@@ -151,8 +154,13 @@ const App: React.FC = () => {
     setShowCallScreen(false);
   };
 
+  // Dynamic Background Colors - Updated for Romantic Theme
+  const bgGradient = mode === 'professional' 
+    ? 'from-[#050f0a] via-[#020503] to-black' 
+    : 'from-[#1f0510] via-[#150205] to-black'; // Deep Rose/Black for Personal
+
   return (
-    <div className="flex flex-col h-screen w-full bg-[#030303] overflow-hidden relative font-sans">
+    <div className={`flex flex-col h-screen w-full bg-gradient-to-b ${bgGradient} transition-colors duration-1000 overflow-hidden relative font-sans`}>
       {!isLoggedIn ? (
           <WelcomeScreen onStart={(u) => { setUserName(u.fullName); setUserIdentity(u.identity); setProMessages(u.history.professional || []); setPersonalMessages(u.history.personal || []); setCallLogs(u.callLogs || []); setIsLoggedIn(true); }} />
       ) : (
@@ -160,38 +168,42 @@ const App: React.FC = () => {
             {showCallScreen && <CallScreen onHangUp={endCall} onAccept={() => { setIsLiveMode(true); setShowCallScreen(false); }} userName={userName} isCallActive={false} />}
             {isLiveMode ? <LiveInterface isActive={isLiveMode} onToggle={endCall} /> : (
                 <>
-                    <header className={`flex-none h-20 border-b flex items-center justify-between px-4 md:px-8 z-40 backdrop-blur-3xl transition-all duration-700 ${mode === 'professional' ? 'bg-black/80 border-white/5' : 'bg-indigo-950/30 border-white/10'}`}>
-                        <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${mode === 'professional' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-indigo-600/20 text-indigo-400'}`}>
-                                <Zap size={20} fill="currentColor" />
+                    {/* Floating Header */}
+                    <header className="absolute top-0 left-0 right-0 h-24 z-40 flex items-center justify-between px-6 md:px-10 pointer-events-none">
+                        <div className="pointer-events-auto flex items-center gap-3 glass-panel px-4 py-2 rounded-full shadow-2xl">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${mode === 'professional' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-pink-500/10 text-pink-400'}`}>
+                                <Zap size={16} fill="currentColor" />
                             </div>
-                            <div className="hidden sm:flex flex-col">
-                                <span className="text-[14px] font-black tracking-tight text-white uppercase leading-none">SIYA NEURAL</span>
-                                <span className={`text-[8px] font-bold uppercase tracking-[0.2em] mt-1 ${mode === 'professional' ? 'text-emerald-500/60' : 'text-indigo-400/60'}`}>HF Cloud v1.0</span>
+                            <div className="flex flex-col">
+                                <span className="text-[12px] font-bold text-white tracking-wide">SIYA</span>
+                                <span className={`text-[8px] font-medium tracking-wider ${mode === 'professional' ? 'text-emerald-400' : 'text-pink-400'}`}>
+                                  {mode === 'professional' ? 'PRO LINK' : 'PERSONAL'}
+                                </span>
                             </div>
                         </div>
 
-                        <div className="flex bg-white/[0.04] p-1 rounded-2xl border border-white/5">
-                            <button onClick={() => setMode('professional')} className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${mode === 'professional' ? 'bg-white/10 text-emerald-400 shadow-xl' : 'text-zinc-500'}`}>
+                        <div className="pointer-events-auto flex bg-black/40 backdrop-blur-md p-1 rounded-full border border-white/5 shadow-2xl">
+                            <button onClick={() => setMode('professional')} className={`relative z-10 flex items-center gap-2 px-5 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all duration-300 ${mode === 'professional' ? 'text-emerald-400 bg-white/10 shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}>
                                 <Briefcase size={12} /> Work
                             </button>
-                            <button onClick={() => setMode('personal')} className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${mode === 'personal' ? 'bg-white/10 text-indigo-400 shadow-xl' : 'text-zinc-500'}`}>
+                            <button onClick={() => setMode('personal')} className={`relative z-10 flex items-center gap-2 px-5 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all duration-300 ${mode === 'personal' ? 'text-pink-400 bg-white/10 shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}>
                                 <Heart size={12} /> Personal
                             </button>
                         </div>
 
-                        <div className="flex items-center gap-4">
+                        <div className="pointer-events-auto flex items-center gap-3">
                             {mode === 'personal' && (
-                                <button onClick={startCall} className="w-10 h-10 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center">
-                                    <Mic size={20} className="animate-pulse" />
+                                <button onClick={startCall} className="w-10 h-10 rounded-full bg-white/5 text-pink-300 border border-white/5 hover:bg-pink-500/20 hover:text-white transition-all flex items-center justify-center backdrop-blur-md">
+                                    <Mic size={18} />
                                 </button>
                             )}
-                            <button onClick={() => { logoutUser(); setIsLoggedIn(false); }} className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-600 hover:text-red-400 transition-all">
-                                <LogOut size={20} />
+                            <button onClick={() => { logoutUser(); setIsLoggedIn(false); }} className="w-10 h-10 rounded-full flex items-center justify-center text-white/30 hover:bg-red-500/10 hover:text-red-400 transition-all backdrop-blur-md">
+                                <LogOut size={18} />
                             </button>
                         </div>
                     </header>
-                    <main className="flex-1 min-h-0 relative flex flex-col">
+
+                    <main className="flex-1 min-h-0 relative flex flex-col z-0">
                         <ChatInterface messages={currentMessages} isLoading={isLoading} input={inputValue} setInput={setInputValue} onSend={handleSendMessage} mode={mode} onClearChat={() => {}} onReact={handleReact} />
                     </main>
                 </>

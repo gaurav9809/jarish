@@ -14,63 +14,83 @@
       window.process.env.NODE_ENV = 'production';
     </script>
     <style>
+      :root {
+        --glass-border: rgba(255, 255, 255, 0.08);
+        --glass-bg: rgba(20, 20, 20, 0.6);
+      }
+
       * {
         box-sizing: border-box;
         -webkit-tap-highlight-color: transparent;
       }
+      
       body {
         margin: 0;
         padding: 0;
         background-color: #000;
         color: #fff;
         overflow: hidden;
-      }
-      
-      .pink-gradient-bg {
-        background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-        position: relative;
-        overflow: hidden;
+        font-family: 'Inter', sans-serif;
       }
 
-      .personal-mesh-bg {
-        background-color: #050508;
-        background-image: 
-          radial-gradient(at 0% 0%, hsla(253,16%,15%,1) 0, transparent 50%), 
-          radial-gradient(at 50% 0%, hsla(225,39%,30%,0.3) 0, transparent 50%), 
-          radial-gradient(at 100% 0%, hsla(339,49%,30%,0.3) 0, transparent 50%),
-          radial-gradient(at 100% 100%, hsla(250,50%,20%,0.4) 0, transparent 50%),
-          radial-gradient(at 0% 100%, hsla(280,50%,20%,0.4) 0, transparent 50%);
-        background-size: 200% 200%;
-        animation: meshMove 15s ease-in-out infinite alternate;
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar {
+        width: 6px;
       }
-
-      @keyframes meshMove {
-        0% { background-position: 0% 0%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 100%; }
+      ::-webkit-scrollbar-track {
+        background: transparent;
       }
-
-      .glass-effect {
-        background: rgba(255, 255, 255, 0.03);
-        backdrop-filter: blur(24px);
-        -webkit-backdrop-filter: blur(24px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-      }
-
-      .personal-bubble-user {
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
-      }
-
-      .personal-bubble-ai {
-        background: rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-      }
-
-      .nav-pill-active {
+      ::-webkit-scrollbar-thumb {
         background: rgba(255, 255, 255, 0.1);
-        box-shadow: 0 0 15px rgba(255, 255, 255, 0.05);
+        border-radius: 10px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.2);
+      }
+
+      /* Animations */
+      @keyframes gradientFlow {
+        0% { transform: translate(0, 0) scale(1); }
+        33% { transform: translate(30px, -50px) scale(1.1); }
+        66% { transform: translate(-20px, 20px) scale(0.9); }
+        100% { transform: translate(0, 0) scale(1); }
+      }
+
+      @keyframes messagePop {
+        0% { opacity: 0; transform: translateY(20px) scale(0.95); }
+        100% { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
+      @keyframes float {
+        0% { transform: translateY(0px); }
+        50% { transform: translateY(-10px); }
+        100% { transform: translateY(0px); }
+      }
+
+      @keyframes glowPulse {
+        0% { box-shadow: 0 0 5px rgba(99, 102, 241, 0.2); }
+        50% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.6); }
+        100% { box-shadow: 0 0 5px rgba(99, 102, 241, 0.2); }
+      }
+
+      .animate-message-pop {
+        animation: messagePop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+      }
+
+      .animate-float {
+        animation: float 6s ease-in-out infinite;
+      }
+
+      .animate-gradient-slow {
+        animation: gradientFlow 15s ease-in-out infinite alternate;
+      }
+
+      /* Utilities */
+      .glass-panel {
+        background: rgba(10, 10, 10, 0.6);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid var(--glass-border);
       }
 
       .hide-scrollbar::-webkit-scrollbar {
@@ -80,44 +100,9 @@
         -ms-overflow-style: none;
         scrollbar-width: none;
       }
-
-      .typing-dot {
-        width: 4px;
-        height: 4px;
-        border-radius: 50%;
-        animation: typing 1s infinite ease-in-out;
-      }
-
-      @keyframes typing {
-        0%, 100% { transform: translateY(0); opacity: 0.3; }
-        50% { transform: translateY(-4px); opacity: 1; }
-      }
-
-      .grain::after {
-        content: "";
-        position: fixed;
-        top: -100%;
-        left: -100%;
-        width: 300%;
-        height: 300%;
-        background-image: url("https://upload.wikimedia.org/wikipedia/commons/7/76/Noise_64x64.png");
-        opacity: 0.02;
-        pointer-events: none;
-        animation: grain 8s steps(10) infinite;
-        z-index: 999;
-      }
-
-      @keyframes grain {
-        0%, 100% { transform: translate(0, 0); }
-        10% { transform: translate(-5%, -10%); }
-        30% { transform: translate(-10%, 5%); }
-        50% { transform: translate(15%, 10%); }
-        70% { transform: translate(-15%, 5%); }
-        90% { transform: translate(10%, 5%); }
-      }
     </style>
   </head>
-  <body class="grain">
+  <body>
     <div id="root"></div>
     <script type="importmap">
 {

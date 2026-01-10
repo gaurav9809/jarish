@@ -1,9 +1,20 @@
 
 import React, { useEffect, useRef, useState } from 'react';
-import { MicOff, PhoneOff, Mic, ShieldAlert } from 'lucide-react';
+import { MicOff, PhoneOff, Mic, ShieldAlert, RefreshCw } from 'lucide-react';
 import Visualizer from './Visualizer';
+import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { ADAPTIVE_SYSTEM_INSTRUCTION } from '../constants';
-import { getApiKey } from '../services/localAiService';
+import { createPcmBlob, decodeAudioData, arrayBufferToBase64 } from '../services/geminiService';
+
+function decode(base64: string) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
 
 interface LiveInterfaceProps {
   isActive: boolean;
@@ -16,117 +27,201 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ isActive, onToggle }) => 
   const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const recognitionRef = useRef<any>(null);
-  const synthesisRef = useRef<SpeechSynthesis | null>(null);
+  const inputAudioContextRef = useRef<AudioContext | null>(null);
+  const outputAudioContextRef = useRef<AudioContext | null>(null);
+  const nextStartTimeRef = useRef<number>(0);
+  const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const sessionRef = useRef<any>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     if (isActive) {
-      startVoiceLink();
+      setupNeuralLink();
     }
     return () => {
-      if (recognitionRef.current) recognitionRef.current.stop();
-      if (synthesisRef.current) synthesisRef.current.cancel();
+      terminateNeuralLink();
     };
   }, [isActive]);
 
-  const startVoiceLink = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    
-    if (!SpeechRecognition) {
-      setError("Browser voice recognition not supported.");
-      return;
-    }
-
-    recognitionRef.current = new SpeechRecognition();
-    recognitionRef.current.continuous = true;
-    recognitionRef.current.interimResults = false;
-    recognitionRef.current.lang = 'hi-IN'; 
-
-    recognitionRef.current.onresult = async (event: any) => {
-      const last = event.results.length - 1;
-      const text = event.results[last][0].transcript;
-      if (text.trim() && !isMuted) {
-        processVoiceInput(text);
-      }
-    };
-
-    recognitionRef.current.start();
-    synthesisRef.current = window.speechSynthesis;
-    setStatus("NEURAL LINK ACTIVE (R1)");
-  };
-
-  const processVoiceInput = async (userInput: string) => {
-    setStatus("R1 THINKING...");
+  const setupNeuralLink = async () => {
     try {
-      const apiKey = getApiKey();
-      if (!apiKey) {
-          throw new Error("DeepSeek API Key missing");
+      setError(null);
+      setStatus("SCANNING AUDIO DEVICES...");
+      
+      // Verify MediaDevices support
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+         throw new Error("Neural Interface (Microphone) not supported on this browser.");
       }
 
-      const response = await fetch(`https://api.deepseek.com/chat/completions`, {
-        method: 'POST',
-        headers: { 
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      
+      // 1. Get Microphone Stream with fallbacks
+      let stream: MediaStream;
+      try {
+        // Try high quality first
+        stream = await navigator.mediaDevices.getUserMedia({ 
+            audio: {
+                sampleRate: 16000,
+                channelCount: 1,
+                echoCancellation: true,
+                autoGainControl: true,
+                noiseSuppression: true
+            }
+        });
+      } catch (err: any) {
+        console.warn("High-quality audio failed, trying basic...", err);
+        try {
+            // Fallback to basic
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (finalErr: any) {
+             console.error("Audio access failed:", finalErr);
+             
+             // Analyze error type
+             if (finalErr.name === 'NotAllowedError' || finalErr.name === 'PermissionDeniedError') {
+                 throw new Error("Access Denied: Please allow microphone permissions in your browser settings.");
+             } else if (finalErr.name === 'NotFoundError' || finalErr.name === 'DevicesNotFoundError') {
+                 throw new Error("Hardware Missing: No microphone detected. Please check your connections.");
+             } else if (finalErr.name === 'NotReadableError' || finalErr.name === 'TrackStartError') {
+                 throw new Error("Hardware Busy: Microphone is being used by another application.");
+             } else {
+                 throw new Error(`Audio Error: ${finalErr.message || "Unknown microphone issue"}`);
+             }
+        }
+      }
+      
+      streamRef.current = stream;
+      setStatus("ESTABLISHING NEURAL LINK...");
+
+      // 2. Initialize Audio Contexts
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      inputAudioContextRef.current = new AudioContextClass({ sampleRate: 16000 });
+      outputAudioContextRef.current = new AudioContextClass({ sampleRate: 24000 });
+      
+      // Resume contexts if suspended (browser autoplay policy)
+      if (inputAudioContextRef.current.state === 'suspended') await inputAudioContextRef.current.resume();
+      if (outputAudioContextRef.current.state === 'suspended') await outputAudioContextRef.current.resume();
+
+      const sessionPromise = ai.live.connect({
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        callbacks: {
+          onopen: () => {
+            setStatus("NEURAL LINK ACTIVE");
+            if (!inputAudioContextRef.current) return;
+
+            const source = inputAudioContextRef.current.createMediaStreamSource(stream);
+            const scriptProcessor = inputAudioContextRef.current.createScriptProcessor(4096, 1, 1);
+            
+            scriptProcessor.onaudioprocess = (e) => {
+              if (isMuted) return;
+              const inputData = e.inputBuffer.getChannelData(0);
+              const pcmBlob = createPcmBlob(inputData);
+              // Use sessionPromise to prevent closure staleness
+              sessionPromise.then(session => {
+                session.sendRealtimeInput({ media: pcmBlob });
+              });
+            };
+
+            source.connect(scriptProcessor);
+            scriptProcessor.connect(inputAudioContextRef.current.destination);
+          },
+          onmessage: async (message: LiveServerMessage) => {
+            const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
+            if (base64Audio && outputAudioContextRef.current) {
+              setIsSpeaking(true);
+              setStatus("SIYA RESPONDING");
+              
+              nextStartTimeRef.current = Math.max(nextStartTimeRef.current, outputAudioContextRef.current.currentTime);
+              const audioBuffer = await decodeAudioData(decode(base64Audio), outputAudioContextRef.current, 24000, 1);
+              const source = outputAudioContextRef.current.createBufferSource();
+              source.buffer = audioBuffer;
+              source.connect(outputAudioContextRef.current.destination);
+              
+              source.addEventListener('ended', () => {
+                sourcesRef.current.delete(source);
+                if (sourcesRef.current.size === 0) {
+                   setIsSpeaking(false);
+                   setStatus("AWAITING INPUT");
+                }
+              });
+
+              source.start(nextStartTimeRef.current);
+              nextStartTimeRef.current += audioBuffer.duration;
+              sourcesRef.current.add(source);
+            }
+
+            if (message.serverContent?.interrupted) {
+              sourcesRef.current.forEach(s => s.stop());
+              sourcesRef.current.clear();
+              nextStartTimeRef.current = 0;
+            }
+          },
+          onerror: (e) => {
+            console.error("Live Neural Error:", e);
+            setError("Connection to Neural Core lost.");
+          },
+          onclose: () => {
+            setStatus("LINK TERMINATED");
+          }
         },
-        body: JSON.stringify({
-          model: "deepseek-reasoner",
-          messages: [
-              { role: 'system', content: ADAPTIVE_SYSTEM_INSTRUCTION + " Reply in extremely short Hinglish sentences." },
-              { role: 'user', content: userInput }
-          ]
-        })
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }
+          },
+          systemInstruction: ADAPTIVE_SYSTEM_INSTRUCTION + " Be very brief. Use Hinglish."
+        }
       });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error?.message || `API Error: ${response.status}`);
-      }
+      sessionRef.current = await sessionPromise;
 
-      const data = await response.json();
-      if (data.choices && data.choices[0]) {
-        // R1 might return reasoning content, we only want the final speech content
-        const content = data.choices[0].message.content;
-        speakText(content);
-      }
     } catch (err: any) {
       console.error(err);
-      setStatus("UPLINK ERROR");
-      if (err.message.includes("Key missing")) {
-        speakText("API key missing sir.");
-      }
+      setError(err.message || "Failed to initialize neural uplink.");
+      // Clean up if we partially succeeded
+      terminateNeuralLink(); 
     }
   };
 
-  const speakText = (text: string) => {
-    if (!synthesisRef.current) return;
-    if (!text) return;
-    
-    const cleanText = text.replace(/\[REACT:.*?\]/g, "").replace(/\<.*?\>/g, "").trim();
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.rate = 1.1;
-    utterance.pitch = 1.1;
-    utterance.onstart = () => { setIsSpeaking(true); setStatus("SIYA SPEAKING"); };
-    utterance.onend = () => { setIsSpeaking(false); setStatus("AWAITING INPUT"); };
-    synthesisRef.current.speak(utterance);
+  const terminateNeuralLink = () => {
+    if (sessionRef.current) {
+      try { sessionRef.current.close(); } catch(e) {}
+    }
+    if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+    }
+    inputAudioContextRef.current?.close();
+    outputAudioContextRef.current?.close();
+    sourcesRef.current.forEach(s => s.stop());
+    sourcesRef.current.clear();
+  };
+
+  const handleRetry = () => {
+      terminateNeuralLink();
+      setupNeuralLink();
   };
 
   return (
     <div className="absolute inset-0 bg-black z-50 flex flex-col font-mono">
        {error && (
          <div className="absolute inset-0 z-[60] bg-black/95 flex items-center justify-center p-8 text-center">
-            <div className="max-w-xs flex flex-col items-center">
+            <div className="max-w-md flex flex-col items-center p-6 border border-red-500/20 rounded-2xl bg-red-900/10 backdrop-blur-md">
                 <ShieldAlert size={48} className="text-red-500 mb-6" />
-                <h2 className="text-white text-xl font-bold mb-4 uppercase">System Error</h2>
-                <p className="text-white/40 text-xs mb-8">{error}</p>
-                <button onClick={onToggle} className="w-full py-4 bg-white text-black font-black uppercase text-[10px] rounded-full">Terminate</button>
+                <h2 className="text-white text-xl font-bold mb-2 uppercase">System Malfunction</h2>
+                <p className="text-white/60 text-xs mb-8 leading-relaxed">{error}</p>
+                <div className="flex gap-4 w-full">
+                    <button onClick={onToggle} className="flex-1 py-3 bg-white/10 text-white font-bold uppercase text-[10px] rounded-full hover:bg-white/20 transition-colors">Abort</button>
+                    <button onClick={handleRetry} className="flex-1 py-3 bg-white text-black font-bold uppercase text-[10px] rounded-full hover:bg-gray-200 transition-colors flex items-center justify-center gap-2">
+                        <RefreshCw size={14} /> Retry Uplink
+                    </button>
+                </div>
             </div>
          </div>
        )}
 
        <div className="absolute top-0 left-0 w-full p-8 z-20 flex justify-between items-start pointer-events-none">
             <div className="flex flex-col gap-2">
-                <div className="border border-indigo-500/30 bg-black/60 px-5 py-2 text-indigo-400 text-[10px] font-black tracking-[0.3em] backdrop-blur-3xl">
+                <div className="border border-indigo-500/30 bg-black/60 px-5 py-2 text-indigo-400 text-[10px] font-black tracking-[0.3em] backdrop-blur-3xl rounded-r-full">
                     STATUS: {status}
                 </div>
             </div>
@@ -140,7 +235,7 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ isActive, onToggle }) => 
             <button onClick={() => setIsMuted(!isMuted)} className={`w-20 h-20 rounded-full flex items-center justify-center border transition-all ${isMuted ? 'bg-red-500/10 border-red-500 text-red-500' : 'bg-white/5 border-white/10 text-white/40'}`}>
                 {isMuted ? <MicOff size={28} /> : <Mic size={28} />}
             </button>
-            <button onClick={onToggle} className="w-24 h-24 bg-red-600 rounded-full flex items-center justify-center shadow-2xl transition-all">
+            <button onClick={onToggle} className="w-24 h-24 bg-red-600 rounded-full flex items-center justify-center shadow-2xl transition-all hover:scale-105 active:scale-95">
                 <PhoneOff size={32} className="text-white" />
             </button>
        </div>
