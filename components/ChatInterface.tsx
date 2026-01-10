@@ -1,14 +1,17 @@
-import React, { useEffect, useRef } from 'react';
+
+import React, { useEffect, useRef, useState } from 'react';
 import { Message } from '../types';
-import { Send, Heart, Globe, Sparkles, Paperclip, Smile, Briefcase } from 'lucide-react';
+import { Send, Paperclip, PhoneOutgoing, Heart, Sparkles, Terminal, Zap } from 'lucide-react';
 
 interface ChatInterfaceProps {
   messages: Message[];
   isLoading: boolean;
   input: string;
   setInput: (val: string) => void;
-  onSend: () => void;
+  onSend: (image?: string) => void;
   mode: 'professional' | 'personal';
+  onClearChat: () => void;
+  onReact: (messageId: string, emoji: string) => void;
 }
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ 
@@ -20,161 +23,153 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   mode
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
-    messagesEndRef.current?.scrollIntoView({ behavior });
-  };
-
-  useEffect(() => {
-    scrollToBottom("auto"); // Instant scroll on load
-  }, [messages.length]);
-
-  useEffect(() => {
-    if (isLoading) scrollToBottom();
-  }, [isLoading]);
-
-  // Auto-resize textarea
-  useEffect(() => {
-    if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 100)}px`;
-    }
-  }, [input]);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      onSend();
-      if (textareaRef.current) textareaRef.current.style.height = 'auto';
-    }
-  };
-
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [mood, setMood] = useState<'idle' | 'happy' | 'thinking'>('idle');
   const isPersonal = mode === 'personal';
-  
-  // --- STYLING ---
-  
-  // Personal Mode: "Instagram/Snapchat" vibe (Darker, sleeker)
-  // Professional Mode: "Glassmorphism" vibe
-  const containerClass = isPersonal 
-    ? "flex flex-col h-full w-full max-w-4xl mx-auto relative bg-transparent" 
-    : "flex flex-col h-full w-full max-w-4xl mx-auto glass-panel rounded-2xl overflow-hidden shadow-2xl relative transition-all duration-500";
 
-  const userBubbleClass = isPersonal
-    ? "bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-[20px] px-4 py-2 text-sm md:text-[15px] shadow-md border border-white/5" 
-    : "bg-gradient-to-tr from-blue-600 to-cyan-500 text-white rounded-2xl rounded-br-none px-4 py-2.5 shadow-lg backdrop-blur-sm";
+  useEffect(() => {
+    if (isLoading) setMood('thinking');
+    else if (messages.length > 0 && messages[messages.length - 1].role === 'model') {
+      setMood('happy');
+      setTimeout(() => setMood('idle'), 3000);
+    } else setMood('idle');
+  }, [isLoading, messages.length]);
 
-  const botBubbleClass = isPersonal
-    ? "bg-[#1f1f1f] text-gray-100 rounded-[20px] px-4 py-2 text-sm md:text-[15px] border border-white/5 shadow-sm"
-    : "bg-white/10 border border-white/5 text-slate-100 rounded-2xl rounded-bl-none px-4 py-2.5 backdrop-blur-sm";
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
 
-  const inputContainerClass = isPersonal
-    ? "relative flex items-center gap-2 bg-[#1a1a1a] rounded-full p-1.5 pl-4 border border-white/10 focus-within:border-pink-500/50 transition-colors shadow-lg"
-    : "relative flex items-end gap-2 bg-slate-900/60 backdrop-blur-xl border border-white/10 rounded-[1.5rem] p-2 transition-all duration-300 hover:border-white/20 focus-within:border-cyan-400/50";
+  const handleSend = () => {
+    if (!input.trim() && !selectedImage) return;
+    onSend(selectedImage || undefined);
+    setSelectedImage(null);
+  };
 
   return (
-    <div className={containerClass}>
-       
-      {/* Chat History */}
-      <div className={`flex-1 overflow-y-auto custom-scrollbar overscroll-contain ${isPersonal ? 'p-3 space-y-3' : 'p-4 space-y-5'}`}>
-        
-        {/* Welcome Spacer */}
-        <div className="h-2"></div>
+    <div className={`flex flex-col h-full w-full relative overflow-hidden transition-all duration-700 ${isPersonal ? 'personal-mesh-bg' : 'bg-[#0a0a0a]'}`}>
+      
+      {/* Mode Background Accents */}
+      {!isPersonal && (
+          <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{backgroundImage: 'radial-gradient(#ffffff 1px, transparent 0)', backgroundSize: '40px 40px'}}></div>
+      )}
 
-        {messages.map((msg) => (
-          <div 
-            key={msg.id} 
-            className={`flex items-end gap-2 animate-fade-in ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
-          >
-             {/* Avatar (Bot Only) */}
-             {msg.role === 'model' && (
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 border overflow-hidden
-                ${isPersonal 
-                    ? 'bg-pink-900/20 border-pink-500/30' 
-                    : 'bg-cyan-900/20 border-cyan-500/30'}`}>
-                    {isPersonal ? (
-                        <img src="https://img.freepik.com/premium-photo/cute-anime-girl-with-big-eyes-glasses_670382-120067.jpg" className="w-full h-full object-cover" alt="Siya" />
-                    ) : (
-                        <Briefcase size={12} className="text-cyan-300" />
-                    )}
-                </div>
-            )}
-            
-            <div className={`flex flex-col max-w-[80%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                {/* Bubble */}
-                <div className={msg.role === 'user' ? userBubbleClass : botBubbleClass}>
-                    <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
-                </div>
+      {/* Modern SIYA Neural Head (Replaces Girl Avatar) */}
+      <div className="absolute top-10 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none">
+          <div className="relative">
+              {/* Core Aura */}
+              <div className={`absolute inset-0 blur-[60px] rounded-full transition-all duration-1000 ${
+                  mood === 'thinking' ? (isPersonal ? 'bg-indigo-500/40' : 'bg-emerald-500/20') : 
+                  mood === 'happy' ? (isPersonal ? 'bg-pink-500/40' : 'bg-emerald-400/20') : 
+                  'bg-white/5'
+              } scale-150`}></div>
+              
+              <div className={`
+                w-20 h-20 rounded-[28px] border-2 p-0.5 bg-black/80 backdrop-blur-3xl shadow-2xl transition-all duration-700
+                ${mood === 'thinking' ? 'scale-110 border-indigo-500/50' : 'animate-float border-white/10'}
+                ${mood === 'happy' ? 'scale-105 border-pink-500/50 -translate-y-2' : ''}
+                ${!isPersonal ? 'rounded-2xl border-emerald-500/20' : ''}
+              `}>
+                  <div className={`w-full h-full flex items-center justify-center relative overflow-hidden ${isPersonal ? 'rounded-[26px]' : 'rounded-xl'} bg-gradient-to-br from-zinc-900 to-black`}>
+                      <Zap size={32} className={`transition-all duration-700 ${
+                          mood === 'thinking' ? 'text-indigo-400 animate-pulse' : 
+                          mood === 'happy' ? 'text-pink-400 scale-125' : 
+                          (isPersonal ? 'text-indigo-500/50' : 'text-emerald-500/50')
+                      }`} fill="currentColor" />
+                      
+                      {/* Reactive Ring inside icon */}
+                      <div className={`absolute inset-0 border-2 rounded-full transition-all duration-700 ${mood === 'thinking' ? 'border-indigo-500/30 scale-75 animate-ping' : 'border-transparent scale-100'}`}></div>
+                  </div>
+              </div>
+          </div>
 
-                {/* Sources */}
-                {msg.sources && msg.sources.length > 0 && (
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {msg.sources.map((src, idx) => {
-                            let domain = src;
-                            try { domain = new URL(src).hostname.replace('www.', ''); } catch(e){}
-                            return (
-                                <a 
-                                    key={idx} 
-                                    href={src} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    className={`flex items-center gap-1.5 px-2 py-1 bg-black/20 hover:bg-black/40 border rounded-lg transition-all text-[10px] ${isPersonal ? 'border-pink-500/20 text-pink-200' : 'border-cyan-500/20 text-cyan-200'}`}
-                                >
-                                    <Globe size={10} />
-                                    <span className="truncate max-w-[80px]">{domain}</span>
-                                </a>
-                            )
-                        })}
-                    </div>
-                )}
-            </div>
+          <div className="mt-4 animate-fade-up">
+              <div className="bg-black/80 backdrop-blur-2xl px-4 py-1 rounded-full border border-white/5 shadow-2xl flex items-center gap-2.5">
+                  <div className={`w-1.5 h-1.5 rounded-full ${isLoading ? 'bg-indigo-400 animate-ping' : isPersonal ? 'bg-indigo-500' : 'bg-emerald-500'}`}></div>
+                  <span className={`text-[9px] font-black tracking-[0.25em] uppercase ${isPersonal ? 'text-indigo-400/80' : 'text-emerald-500/80'}`}>
+                      {isLoading ? 'Processing' : isPersonal ? 'Siya Core' : 'Neural Active'}
+                  </span>
+              </div>
           </div>
-        ))}
-        
-        {/* Loading Indicator */}
-        {isLoading && (
-          <div className="flex items-center gap-2 pl-2">
-             <div className={`w-7 h-7 rounded-full flex items-center justify-center ${isPersonal ? 'bg-pink-900/20' : 'bg-cyan-900/20'}`}>
-                <Sparkles size={12} className={`animate-spin ${isPersonal ? 'text-pink-400' : 'text-cyan-400'}`}/>
-            </div>
-            <div className={`text-xs animate-pulse ${isPersonal ? 'text-pink-400/50' : 'text-cyan-400/50'}`}>typing...</div>
-          </div>
-        )}
-        <div ref={messagesEndRef} className="h-1" />
       </div>
 
-      {/* Input Area */}
-      <div className={`p-2 md:p-4 shrink-0 z-10 ${isPersonal ? 'bg-transparent' : 'bg-gradient-to-t from-black/50 to-transparent'}`}>
-        <div className="max-w-3xl mx-auto">
-            <div className={inputContainerClass}>
-            
-            {/* Action Button (Left) */}
-            <button className={`p-2 rounded-full transition-colors shrink-0 ${isPersonal ? 'text-pink-500 hover:bg-pink-500/10' : 'text-slate-400 hover:text-white'}`}>
-                {isPersonal ? <Heart size={20} className="fill-current" /> : <Paperclip size={20} />}
-            </button>
+      <div className="flex-1 overflow-y-auto hide-scrollbar px-6 pt-52 pb-44">
+        <div className="max-w-3xl mx-auto space-y-6">
+          {messages.map((msg) => {
+            if (msg.isCall) return (
+              <div key={msg.id} className="flex justify-center my-6 animate-fade-up">
+                <div className="bg-white/[0.02] border border-white/10 rounded-2xl px-5 py-2 flex items-center gap-3 backdrop-blur-md">
+                  <PhoneOutgoing size={12} className="text-indigo-400" />
+                  <span className="text-[10px] font-bold text-white/30 uppercase tracking-[0.2em]">{msg.content}</span>
+                </div>
+              </div>
+            );
 
-            <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                rows={1}
-                placeholder={isPersonal ? "Message your girlfriend..." : "Type a command..."}
-                className="w-full bg-transparent text-white border-none focus:ring-0 focus:outline-none py-2.5 px-1 resize-none max-h-[100px] min-h-[24px] custom-scrollbar placeholder:text-slate-500 text-sm md:text-base font-medium"
-            />
-            
-            {/* Send Button */}
-            <button 
-                onClick={onSend}
-                disabled={isLoading || !input.trim()}
-                className={`p-2 rounded-full transition-all shrink-0 active:scale-95 flex items-center justify-center
-                ${input.trim() 
-                    ? (isPersonal ? 'bg-pink-600 text-white shadow-lg shadow-pink-600/30' : 'bg-cyan-600 text-white shadow-lg shadow-cyan-600/30') 
-                    : 'text-slate-600 bg-white/5'}`}
-            >
-                <Send size={18} className={input.trim() ? "ml-0.5" : ""} />
-            </button>
+            const isUser = msg.role === 'user';
+            return (
+              <div key={msg.id} className={`flex w-full ${isUser ? 'justify-end' : 'justify-start'} animate-fade-up`}>
+                <div className={`relative max-w-[85%] flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+                  <div className={`
+                    px-5 py-3.5 text-[14px] leading-relaxed shadow-xl transition-all
+                    ${isUser ? (isPersonal ? 'personal-bubble-user text-white rounded-[24px] rounded-br-none' : 'bg-emerald-600/20 border border-emerald-500/30 text-emerald-50 rounded-2xl rounded-br-none') : 
+                               (isPersonal ? 'personal-bubble-ai text-zinc-100 rounded-[24px] rounded-bl-none border border-white/10' : 'bg-zinc-900/80 border border-white/5 text-zinc-300 font-mono rounded-2xl rounded-bl-none')}
+                  `}>
+                      {msg.content}
+                  </div>
+                  {msg.reaction && (
+                    <div className={`mt-[-12px] z-10 bg-[#111] border border-white/10 rounded-full px-2.5 py-0.5 text-[12px] shadow-2xl ${isUser ? 'mr-1' : 'ml-1'}`}>
+                        {msg.reaction}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {isLoading && (
+            <div className="flex items-start gap-3 animate-fade-up">
+              <div className={`px-5 py-4 rounded-[24px] flex gap-1.5 border border-white/5 backdrop-blur-xl ${isPersonal ? 'personal-bubble-ai' : 'bg-zinc-900'}`}>
+                <div className={`w-1.5 h-1.5 rounded-full animate-bounce ${isPersonal ? 'bg-indigo-400' : 'bg-emerald-400'}`}></div>
+                <div className={`w-1.5 h-1.5 rounded-full animate-bounce [animation-delay:0.2s] ${isPersonal ? 'bg-indigo-400' : 'bg-emerald-400'}`}></div>
+                <div className={`w-1.5 h-1.5 rounded-full animate-bounce [animation-delay:0.4s] ${isPersonal ? 'bg-indigo-400' : 'bg-emerald-400'}`}></div>
+              </div>
             </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+      </div>
+
+      <div className="absolute bottom-10 left-0 w-full px-4 md:px-12 pointer-events-none">
+        <div className="max-w-2xl mx-auto pointer-events-auto">
+          <div className={`
+            flex items-center gap-2 p-2 rounded-[30px] border shadow-2xl backdrop-blur-3xl transition-all duration-500
+            ${isPersonal ? 'bg-white/[0.04] border-white/10' : 'bg-black/60 border-emerald-500/20 focus-within:border-emerald-500/40'}
+          `}>
+            <button onClick={() => fileInputRef.current?.click()} className="w-10 h-10 flex items-center justify-center text-white/30 hover:text-white transition-all bg-white/5 rounded-full flex-shrink-0"><Paperclip size={18} /></button>
+            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => setSelectedImage(reader.result as string);
+                    reader.readAsDataURL(file);
+                }
+            }} />
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
+              placeholder={isPersonal ? "Kuch kaho..." : "Query..."}
+              className={`flex-1 bg-transparent border-none focus:ring-0 text-[14px] text-white resize-none py-2.5 placeholder-white/20 max-h-32 hide-scrollbar ${!isPersonal ? 'font-mono' : ''}`}
+              rows={1}
+            />
+            <button onClick={handleSend} disabled={!input.trim() && !selectedImage} className={`
+                w-10 h-10 rounded-full flex items-center justify-center transition-all flex-shrink-0
+                ${(input.trim() || selectedImage) ? 
+                    (isPersonal ? 'bg-indigo-600 text-white shadow-lg' : 'bg-emerald-600 text-white shadow-lg') : 
+                    'bg-white/5 text-white/10'}
+            `}>
+                <Send size={16} />
+            </button>
+          </div>
         </div>
       </div>
     </div>

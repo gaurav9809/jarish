@@ -1,132 +1,84 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Message } from './types';
+import { Message, CallLog } from './types';
 import ChatInterface from './components/ChatInterface';
 import LiveInterface from './components/LiveInterface';
 import WelcomeScreen from './components/WelcomeScreen';
-import { createChatSession, APP_MAPPING } from './services/geminiService';
-import { getSessionUser, logoutUser, saveChatHistory } from './services/storageService';
-import { PROFESSIONAL_INSTRUCTION, PERSONAL_INSTRUCTION } from './constants';
-import { Mic, Sparkles, LogOut, Heart, Brain, AlertTriangle, Video } from 'lucide-react';
+import CallScreen from './components/CallScreen';
+import { createLocalChatSession } from './services/localAiService';
+import { getSessionUser, logoutUser, saveChatHistory, saveCallLog, updateMessageReaction } from './services/storageService';
+import { 
+  PROFESSIONAL_INSTRUCTION, 
+  PERSONAL_PHASE_FRIEND, 
+  PERSONAL_PHASE_DEVELOPING, 
+  PERSONAL_PHASE_LOVER 
+} from './constants';
+import { LogOut, Zap, Mic, Briefcase, Heart } from 'lucide-react';
 
 type Mode = 'professional' | 'personal';
 
 const App: React.FC = () => {
   const [proMessages, setProMessages] = useState<Message[]>([]);
   const [personalMessages, setPersonalMessages] = useState<Message[]>([]);
+  const [callLogs, setCallLogs] = useState<CallLog[]>([]);
   
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isLiveMode, setIsLiveMode] = useState(false);
+  const [showCallScreen, setShowCallScreen] = useState(false);
   
-  const [mode, setMode] = useState<Mode>('professional');
-  
+  const [mode, setMode] = useState<Mode>('personal'); 
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userIdentity, setUserIdentity] = useState(''); 
   const [userName, setUserName] = useState('');
-  const [configError, setConfigError] = useState<string | null>(null);
+
+  const currentMessages = mode === 'professional' ? proMessages : personalMessages;
 
   const proSessionRef = useRef<any>(null);
   const personalSessionRef = useRef<any>(null);
+  const currentPersonalInstructionRef = useRef<string>(PERSONAL_PHASE_FRIEND);
+  const callStartTimeRef = useRef<number>(0);
 
   useEffect(() => {
-    // Check for existing session on mount
     const sessionUser = getSessionUser();
     if (sessionUser) {
         setUserIdentity(sessionUser.identity);
         setUserName(sessionUser.fullName);
         setProMessages(sessionUser.history.professional || []);
         setPersonalMessages(sessionUser.history.personal || []);
+        setCallLogs(sessionUser.callLogs || []);
         setIsLoggedIn(true);
-        startSessions(); 
     }
   }, []);
 
   useEffect(() => {
-    if (isLoggedIn && userIdentity) saveChatHistory(userIdentity, 'professional', proMessages);
-  }, [proMessages, isLoggedIn, userIdentity]);
-
-  useEffect(() => {
-    if (isLoggedIn && userIdentity) saveChatHistory(userIdentity, 'personal', personalMessages);
-  }, [personalMessages, isLoggedIn, userIdentity]);
-
-
-  const currentMessages = mode === 'professional' ? proMessages : personalMessages;
+    if (isLoggedIn) startSessions();
+  }, [isLoggedIn, personalMessages.length, mode]);
 
   const startSessions = () => {
-    try {
-        proSessionRef.current = createChatSession(PROFESSIONAL_INSTRUCTION);
-        personalSessionRef.current = createChatSession(PERSONAL_INSTRUCTION);
-        setConfigError(null);
-    } catch (e: any) {
-        if (e.message === "API_KEY_MISSING") setConfigError("API Key is missing.");
-    }
-  };
-
-  const handleLoginSuccess = (user: any) => {
-    setUserName(user.fullName);
-    setUserIdentity(user.identity);
-    if (user.history) {
-        setProMessages(user.history.professional || []);
-        setPersonalMessages(user.history.personal || []);
-    }
+    if (!proSessionRef.current) proSessionRef.current = createLocalChatSession(PROFESSIONAL_INSTRUCTION);
     
-    // Auto-message logic for new users or empty chats
-    if (!user.history || user.history.professional.length === 0) {
-        setProMessages([{ id: 'init-pro', role: 'model', content: `Hello ${user.fullName}. Ready to work?`, timestamp: Date.now() }]);
+    const msgCount = personalMessages.filter(m => !m.isCall).length;
+    let newInstruction = PERSONAL_PHASE_FRIEND;
+    if (msgCount > 150) newInstruction = PERSONAL_PHASE_LOVER;
+    else if (msgCount > 50) newInstruction = PERSONAL_PHASE_DEVELOPING;
+
+    if (newInstruction !== currentPersonalInstructionRef.current || !personalSessionRef.current) {
+        currentPersonalInstructionRef.current = newInstruction;
+        personalSessionRef.current = createLocalChatSession(newInstruction);
     }
-    if (!user.history || user.history.personal.length === 0) {
-        // Possessive first message
-        setPersonalMessages([{ id: 'init-personal', role: 'model', content: `Itni der kaha the tum? 😡`, timestamp: Date.now() }]);
-    }
-    
-    setIsLoggedIn(true);
-    startSessions();
   };
 
-  const handleLogout = () => {
-      logoutUser();
-      setIsLoggedIn(false);
-      setProMessages([]);
-      setPersonalMessages([]);
-      setUserIdentity('');
-      setUserName('');
-  };
-
-  const executeOpenApp = (appName: string): string => {
-      const url = APP_MAPPING[appName.toLowerCase()];
-      if (url) {
-          window.open(url, '_blank');
-          return `Opened ${appName}`;
-      }
-      return `App not found: ${appName}`;
-  };
-
-  const executeSendSMS = (recipient: string, message: string): string => {
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      if (isMobile) {
-          window.open(`sms:${recipient}?body=${encodeURIComponent(message)}`, '_blank');
-          return `Messaging app opened`;
-      }
-      return `SMS sent to ${recipient}`;
-  };
-
-  const handleSendMessage = async () => {
-    if (!inputValue.trim()) return;
-
+  const handleSendMessage = async (imageData?: string) => {
+    if (!inputValue.trim() && !imageData) return;
     const currentMode = mode;
     const activeSession = currentMode === 'professional' ? proSessionRef.current : personalSessionRef.current;
-    
-    if (!activeSession) {
-        try {
-            if (currentMode === 'professional') proSessionRef.current = createChatSession(PROFESSIONAL_INSTRUCTION);
-            else personalSessionRef.current = createChatSession(PERSONAL_INSTRUCTION);
-        } catch (e: any) { return; }
-    }
+    if (!activeSession) return;
 
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: inputValue,
+      content: inputValue || "Analyze this image.",
       timestamp: Date.now(),
     };
 
@@ -137,39 +89,20 @@ const App: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const sessionToUse = currentMode === 'professional' ? proSessionRef.current : personalSessionRef.current;
-      let result = await sessionToUse.sendMessage({ message: userMsg.content });
-      
-      while (result.functionCalls && result.functionCalls.length > 0) {
-          const functionResponses: any[] = [];
-          for (const call of result.functionCalls) {
-              if (call.name === 'openApp') {
-                  const status = executeOpenApp(call.args['appName']);
-                  const sysMsg: Message = { id: Date.now().toString(), role: 'system', content: `📱 Opening ${call.args['appName']}`, timestamp: Date.now() };
-                  if (currentMode === 'professional') setProMessages(prev => [...prev, sysMsg]);
-                  else setPersonalMessages(prev => [...prev, sysMsg]);
-
-                  functionResponses.push({ functionResponse: { name: call.name, response: { result: status }, id: call.id } });
-              } else if (call.name === 'sendSMS') {
-                  const status = executeSendSMS(call.args['recipient'], call.args['message']);
-                  const sysMsg: Message = { id: Date.now().toString(), role: 'system', content: `📨 SMS Sent`, timestamp: Date.now() };
-                  if (currentMode === 'professional') setProMessages(prev => [...prev, sysMsg]);
-                  else setPersonalMessages(prev => [...prev, sysMsg]);
-
-                  functionResponses.push({ functionResponse: { name: call.name, response: { result: status }, id: call.id } });
-              }
-          }
-          if (functionResponses.length > 0) result = await sessionToUse.sendMessage(functionResponses);
-          else break;
+      const lastBotMsg = [...currentMessages].reverse().find(m => m.role === 'model' && !m.isCall);
+      let contextPrefix = "";
+      if (lastBotMsg && lastBotMsg.reaction) {
+          contextPrefix = `[User reacted with ${lastBotMsg.reaction}] `;
       }
 
-      const responseText = result.text || "";
-      let sources: string[] = [];
-      const candidates = result.candidates;
-      if (candidates && candidates[0]?.groundingMetadata?.groundingChunks) {
-         candidates[0].groundingMetadata.groundingChunks.forEach((chunk: any) => {
-            if (chunk.web?.uri) sources.push(chunk.web.uri);
-         });
+      const result = await activeSession.sendMessage({ message: contextPrefix + userMsg.content });
+      let responseText = result.text || "";
+      
+      const reactMatch = responseText.match(/\[REACT:\s*([\uD800-\uDBFF][\uDC00-\uDFFF]|\S+)\]/);
+      if (reactMatch) {
+          const aiEmoji = reactMatch[1];
+          responseText = responseText.replace(/\[REACT:.*?\]/, "").trim();
+          handleReact(userMsg.id, aiEmoji);
       }
 
       const botMsg: Message = {
@@ -177,98 +110,94 @@ const App: React.FC = () => {
         role: 'model',
         content: responseText,
         timestamp: Date.now(),
-        sources: sources.length > 0 ? Array.from(new Set(sources)) : undefined
       };
 
       if (currentMode === 'professional') setProMessages(prev => [...prev, botMsg]);
       else setPersonalMessages(prev => [...prev, botMsg]);
 
     } catch (error: any) {
-      // Error handling
+      console.error("Neural Error:", error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const toggleMode = () => setMode(prev => prev === 'professional' ? 'personal' : 'professional');
-  const isPersonal = mode === 'personal';
+  const handleReact = (messageId: string, emoji: string) => {
+      const currentMode = mode;
+      if (currentMode === 'professional') {
+          setProMessages(prev => prev.map(m => m.id === messageId ? { ...m, reaction: emoji } : m));
+      } else {
+          setPersonalMessages(prev => prev.map(m => m.id === messageId ? { ...m, reaction: emoji } : m));
+      }
+      updateMessageReaction(userIdentity, currentMode, messageId, emoji);
+  };
+
+  const startCall = () => {
+    if (mode === 'professional') return;
+    setShowCallScreen(true);
+    callStartTimeRef.current = Date.now();
+  };
+
+  const endCall = () => {
+    if (isLiveMode || showCallScreen) {
+        const duration = Math.floor((Date.now() - callStartTimeRef.current) / 1000);
+        const newLog: CallLog = { id: Date.now().toString(), type: 'outgoing', startTime: callStartTimeRef.current, duration };
+        const callMsg: Message = { id: Date.now().toString() + '_call', role: 'system', content: `Neural link ended. Duration: ${duration}s`, timestamp: callStartTimeRef.current, isCall: true, callDuration: duration };
+        setPersonalMessages(prev => [...prev, callMsg]);
+        saveCallLog(userIdentity, newLog);
+        setCallLogs(prev => [newLog, ...prev]);
+    }
+    setIsLiveMode(false);
+    setShowCallScreen(false);
+  };
 
   return (
-    // Use dvh (Dynamic Viewport Height) for mobile browser address bar compatibility
-    <div className="h-[100dvh] w-full relative bg-[#050511] text-white font-sans flex flex-col overflow-hidden">
-      
-      {/* Dynamic Background */}
-      <div className={`absolute inset-0 transition-opacity duration-1000 ${isPersonal ? 'bg-[#120a11]' : 'bg-[#050511]'}`}>
-          <div className={`absolute top-[-20%] left-[-20%] w-[80%] h-[80%] rounded-full blur-[100px] mix-blend-screen opacity-20 ${isPersonal ? 'bg-pink-700' : 'bg-blue-900'}`}></div>
-          <div className={`absolute bottom-[-20%] right-[-20%] w-[80%] h-[80%] rounded-full blur-[100px] mix-blend-screen opacity-20 ${isPersonal ? 'bg-purple-700' : 'bg-cyan-900'}`}></div>
-      </div>
-      
-      {/* Main Content Area */}
-      {/* We remove md:p-6 from the container and instead center it responsibly on desktop */}
-      <div className="relative z-10 flex flex-col w-full h-full max-w-5xl mx-auto transition-all duration-500 md:h-[95dvh] md:my-auto md:rounded-2xl md:overflow-hidden md:border md:border-white/5 md:shadow-2xl">
-        
-        {!isLoggedIn ? (
-            <WelcomeScreen onStart={handleLoginSuccess} />
-        ) : (
-            <>
-                {isLiveMode ? (
-                    <LiveInterface isActive={isLiveMode} onToggle={() => setIsLiveMode(false)} />
-                ) : (
-                    <>
-                        {/* Header: Flex-none ensures it never shrinks or disappears */}
-                        <header className="flex-none flex items-center justify-between p-4 pb-2 z-20 backdrop-blur-sm bg-black/10">
-                            <div className="flex items-center gap-3">
-                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-lg transition-colors duration-500 ${isPersonal ? 'bg-gradient-to-br from-pink-500 to-purple-600' : 'bg-gradient-to-br from-blue-600 to-cyan-500'}`}>
-                                    <Sparkles size={20} className="text-white fill-white/20" />
-                                </div>
-                                <div className="flex flex-col justify-center">
-                                    <h1 className="text-lg font-bold tracking-tight leading-none">SIYA</h1>
-                                    <span className="text-[10px] text-white/50 tracking-wider uppercase truncate max-w-[100px]">{userName}</span>
-                                </div>
+    <div className="flex flex-col h-screen w-full bg-[#030303] overflow-hidden relative font-sans">
+      {!isLoggedIn ? (
+          <WelcomeScreen onStart={(u) => { setUserName(u.fullName); setUserIdentity(u.identity); setProMessages(u.history.professional || []); setPersonalMessages(u.history.personal || []); setCallLogs(u.callLogs || []); setIsLoggedIn(true); }} />
+      ) : (
+          <>
+            {showCallScreen && <CallScreen onHangUp={endCall} onAccept={() => { setIsLiveMode(true); setShowCallScreen(false); }} userName={userName} isCallActive={false} />}
+            {isLiveMode ? <LiveInterface isActive={isLiveMode} onToggle={endCall} /> : (
+                <>
+                    <header className={`flex-none h-20 border-b flex items-center justify-between px-4 md:px-8 z-40 backdrop-blur-3xl transition-all duration-700 ${mode === 'professional' ? 'bg-black/80 border-white/5' : 'bg-indigo-950/30 border-white/10'}`}>
+                        <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${mode === 'professional' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-indigo-600/20 text-indigo-400'}`}>
+                                <Zap size={20} fill="currentColor" />
                             </div>
-
-                            <div className="flex items-center gap-2">
-                                <button onClick={toggleMode} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold tracking-wide transition-all duration-300 ${isPersonal ? 'bg-pink-500/20 text-pink-300 ring-1 ring-pink-500/50' : 'bg-cyan-500/10 text-cyan-300 ring-1 ring-cyan-500/30'}`}>
-                                    {isPersonal ? <><Heart size={12} className="fill-current animate-pulse" /> GF</> : <><Brain size={12} /> WORK</>}
-                                </button>
-                                
-                                {/* Video Call Button - Highlighted in Personal Mode */}
-                                <button 
-                                    onClick={() => setIsLiveMode(true)} 
-                                    className={`p-2 rounded-full transition-all active:scale-95 ${isPersonal ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow-lg shadow-pink-600/30 animate-pulse' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}
-                                >
-                                     {isPersonal ? <Video size={18} fill="currentColor" /> : <Mic size={18} />}
-                                </button>
-                                
-                                <button onClick={handleLogout} className="p-2 text-slate-500 hover:text-white bg-transparent hover:bg-white/5 rounded-full transition-colors">
-                                    <LogOut size={18} />
-                                </button>
+                            <div className="hidden sm:flex flex-col">
+                                <span className="text-[14px] font-black tracking-tight text-white uppercase leading-none">SIYA NEURAL</span>
+                                <span className={`text-[8px] font-bold uppercase tracking-[0.2em] mt-1 ${mode === 'professional' ? 'text-emerald-500/60' : 'text-indigo-400/60'}`}>HF Cloud v1.0</span>
                             </div>
-                        </header>
+                        </div>
 
-                        {/* Error Banner */}
-                        {configError && (
-                            <div className="flex-none mx-4 mb-2 bg-red-500/10 border border-red-500/30 rounded-lg p-2.5 text-xs text-red-200 flex items-center gap-2">
-                                <AlertTriangle size={14} /> {configError}
-                            </div>
-                        )}
+                        <div className="flex bg-white/[0.04] p-1 rounded-2xl border border-white/5">
+                            <button onClick={() => setMode('professional')} className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${mode === 'professional' ? 'bg-white/10 text-emerald-400 shadow-xl' : 'text-zinc-500'}`}>
+                                <Briefcase size={12} /> Work
+                            </button>
+                            <button onClick={() => setMode('personal')} className={`flex items-center gap-2 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${mode === 'personal' ? 'bg-white/10 text-indigo-400 shadow-xl' : 'text-zinc-500'}`}>
+                                <Heart size={12} /> Personal
+                            </button>
+                        </div>
 
-                        {/* Main Chat Area - flex-1 min-h-0 ensures scrolling works inside flex container */}
-                        <main className="flex-1 min-h-0 relative flex flex-col">
-                            <ChatInterface 
-                                messages={currentMessages}
-                                isLoading={isLoading}
-                                input={inputValue}
-                                setInput={setInputValue}
-                                onSend={handleSendMessage}
-                                mode={mode}
-                            />
-                        </main>
-                    </>
-                )}
-            </>
-        )}
-      </div>
+                        <div className="flex items-center gap-4">
+                            {mode === 'personal' && (
+                                <button onClick={startCall} className="w-10 h-10 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center">
+                                    <Mic size={20} className="animate-pulse" />
+                                </button>
+                            )}
+                            <button onClick={() => { logoutUser(); setIsLoggedIn(false); }} className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-600 hover:text-red-400 transition-all">
+                                <LogOut size={20} />
+                            </button>
+                        </div>
+                    </header>
+                    <main className="flex-1 min-h-0 relative flex flex-col">
+                        <ChatInterface messages={currentMessages} isLoading={isLoading} input={inputValue} setInput={setInputValue} onSend={handleSendMessage} mode={mode} onClearChat={() => {}} onReact={handleReact} />
+                    </main>
+                </>
+            )}
+          </>
+      )}
     </div>
   );
 };

@@ -1,274 +1,148 @@
 import React, { useState } from 'react';
-import { Sparkles, ArrowRight, Lock, Fingerprint, Mail, Smartphone, User, Eye, EyeOff, ShieldCheck, UserCheck } from 'lucide-react';
-import { sendOTP, registerUser, loginUser, loginAsGuest } from '../services/storageService';
+import { Heart, User, Lock, ArrowRight, ShieldCheck, Sparkles, Zap } from 'lucide-react';
+import { registerUser, loginUser, loginAsGuest } from '../services/storageService';
 
 interface WelcomeScreenProps {
   onStart: (user: any) => void;
 }
 
-type AuthStep = 'credentials' | 'otp';
-
 const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
   const [isLogin, setIsLogin] = useState(true);
-  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState<AuthStep>('credentials');
   
-  // Form State
-  const [identity, setIdentity] = useState(''); // Email or Mobile
+  const [identity, setIdentity] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [otp, setOtp] = useState('');
-  const [generatedOtp, setGeneratedOtp] = useState<string | null>(null);
-
   const [error, setError] = useState('');
 
-  const handleCredentialsSubmit = async () => {
+  const handleSubmit = async () => {
       setError('');
       if (!identity || !password) {
-          setError("Please fill in all fields");
+          setError("Sab fill karo pehle! 😒");
           return;
       }
-
-      if (!isLogin && !fullName) {
-          setError("Name is required for sign up");
-          return;
-      }
-
+      
       setLoading(true);
-
-      if (isLogin) {
-          // Login Flow: Check credentials first
-          setTimeout(() => {
+      setTimeout(() => {
+          if (isLogin) {
               const user = loginUser(identity, password);
-              if (user) {
-                  onStart(user);
-              } else {
-                  setError("Invalid credentials or user does not exist.");
+              if (user) onStart(user);
+              else {
+                  setError("Galat password hai babu... 😡");
                   setLoading(false);
               }
-          }, 800);
-      } else {
-          // Signup Flow: Trigger OTP
-          try {
-              const code = await sendOTP(identity);
-              setGeneratedOtp(code);
-              // OTP is now strictly sent via Email only. No alert.
-              setStep('otp');
-          } catch (e) {
-              console.error(e);
-              setError("Failed to send OTP. Check your email configuration.");
-          } finally {
-              setLoading(false);
-          }
-      }
-  };
-
-  const handleOtpVerify = () => {
-      setLoading(true);
-      setError('');
-
-      setTimeout(() => {
-          if (otp === generatedOtp) {
-              // Create Account
+          } else {
+              if (!fullName) {
+                   setError("Naam toh batao apna? ✨");
+                   setLoading(false);
+                   return;
+              }
               const success = registerUser(identity, password, fullName);
               if (success) {
-                  // Auto Login after reg
-                  const user = loginUser(identity, password);
-                  if (user) onStart(user);
+                   const user = loginUser(identity, password);
+                   if (user) onStart(user);
               } else {
-                  setError("User already exists. Try logging in.");
-                  setIsLogin(true);
-                  setStep('credentials');
+                  setError("Ye ID pehle se hai!");
+                  setLoading(false);
               }
-          } else {
-              setError("Invalid OTP. Try again.");
           }
-          setLoading(false);
-      }, 800);
-  };
-
-  const handleGuestAccess = () => {
-      setLoading(true);
-      setTimeout(() => {
-          const guestUser = loginAsGuest();
-          onStart(guestUser);
-          setLoading(false);
-      }, 600);
-  };
-
-  const resetForm = (mode: boolean) => {
-      setIsLogin(mode);
-      setStep('credentials');
-      setError('');
-      setOtp('');
+      }, 1000);
   };
 
   return (
-    <div className="h-full w-full flex flex-col items-center justify-center relative z-20 px-4">
-      {/* Glass Card */}
-      <div className="w-full max-w-md bg-white/5 backdrop-blur-2xl border border-white/10 p-8 rounded-[2rem] shadow-2xl flex flex-col items-center animate-fade-in relative overflow-hidden group transition-all duration-500">
+    <div className="fixed inset-0 z-50 flex flex-col pink-gradient-bg p-6 overflow-hidden">
+      {/* Decorative Orbs */}
+      <div className="absolute top-[-20%] left-[-20%] w-[80vw] h-[80vw] bg-white/10 rounded-full blur-[120px] animate-pulse"></div>
+      <div className="absolute bottom-[-20%] right-[-20%] w-[70vw] h-[70vw] bg-rose-400/20 rounded-full blur-[120px] animate-pulse delay-1000"></div>
+
+      <div className="flex-1 flex flex-col justify-center items-center max-w-md mx-auto w-full relative z-10">
         
-        {/* Shine Effect */}
-        <div className="absolute top-0 left-[-100%] w-full h-full bg-gradient-to-r from-transparent via-white/5 to-transparent skew-x-12 group-hover:left-[100%] transition-all duration-1000 ease-in-out pointer-events-none"></div>
-
-        {/* Logo Section */}
-        <div className="relative mb-6">
-            <div className="absolute inset-0 bg-brand-primary/50 blur-xl rounded-full animate-pulse"></div>
-            <div className="w-20 h-20 bg-gradient-to-br from-brand-primary to-brand-secondary rounded-full flex items-center justify-center shadow-[0_0_40px_rgba(139,92,246,0.6)] relative z-10">
-                <Sparkles size={32} className="text-white" />
+        {/* Logo */}
+        <div className="text-center mb-10">
+            <div className="w-16 h-16 bg-white rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-xl shadow-pink-900/10 border border-white/40">
+                <Zap size={32} className="text-siya-pink fill-current" />
             </div>
+            <h1 className="text-4xl font-bold text-white tracking-tighter mb-1">SIYA AI</h1>
+            <p className="text-white/60 text-xs font-bold uppercase tracking-[0.3em]">Neural Interface v4.0</p>
         </div>
 
-        <div className="text-center space-y-1 mb-8">
-            <h1 className="text-3xl font-bold text-white tracking-tight">SIYA AI</h1>
-            <p className="text-slate-400 text-xs font-medium tracking-wide uppercase">Secure Access Portal</p>
-        </div>
-
-        {/* Toggle Tabs (Only visible in step 1) */}
-        {step === 'credentials' && (
-            <div className="flex p-1 bg-black/40 rounded-xl mb-6 w-full relative">
-                <div className={`absolute top-1 bottom-1 w-[calc(50%-4px)] bg-white/10 rounded-lg transition-all duration-300 ${isLogin ? 'left-1' : 'left-[calc(50%+4px)]'}`}></div>
-                <button 
-                    onClick={() => resetForm(true)}
-                    className={`flex-1 py-2 text-sm font-medium z-10 transition-colors ${isLogin ? 'text-white' : 'text-slate-400 hover:text-white'}`}
-                >
-                    Login
-                </button>
-                <button 
-                    onClick={() => resetForm(false)}
-                    className={`flex-1 py-2 text-sm font-medium z-10 transition-colors ${!isLogin ? 'text-white' : 'text-slate-400 hover:text-white'}`}
-                >
-                    Sign Up
-                </button>
-            </div>
-        )}
-
-        {/* Step 1: Credentials Form */}
-        {step === 'credentials' ? (
-            <div className="w-full space-y-4 animate-fade-in">
-                
-                {/* Name Input (Signup Only) */}
-                <div className={`space-y-1 transition-all duration-300 overflow-hidden ${!isLogin ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'}`}>
-                    <label className="text-[10px] text-brand-primary font-bold uppercase tracking-widest ml-1">Full Name</label>
-                    <div className="relative group/input">
+        {/* Auth Box */}
+        <div className="w-full glass-effect rounded-[32px] p-8 shadow-2xl overflow-hidden relative">
+            <div className="space-y-4">
+                {!isLogin && (
+                     <div className="relative group">
+                        <User className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-white transition-colors" size={18} />
                         <input 
                             type="text" 
+                            placeholder="Full Name"
                             value={fullName}
                             onChange={(e) => setFullName(e.target.value)}
-                            placeholder="Ex. Rahul Sharma"
-                            className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 pl-10 text-white focus:outline-none focus:border-brand-primary/50 focus:bg-black/40 transition-all placeholder:text-slate-600 text-sm font-medium"
+                            className="w-full bg-black/20 border border-white/10 rounded-2xl py-4 pl-12 pr-6 text-white placeholder-white/30 focus:outline-none focus:border-white/40 transition-all text-sm font-medium"
                         />
-                        <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
                     </div>
-                </div>
+                )}
 
-                {/* Identity Input */}
-                <div className="space-y-1">
-                    <label className="text-[10px] text-brand-primary font-bold uppercase tracking-widest ml-1">
-                        {isLogin ? 'Email or Mobile' : 'Email Address'}
-                    </label>
-                    <div className="relative group/input">
-                        <input 
-                            type="text" 
-                            value={identity}
-                            onChange={(e) => setIdentity(e.target.value)}
-                            placeholder={isLogin ? "user@email.com / 9876..." : "user@email.com"}
-                            className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 pl-10 text-white focus:outline-none focus:border-brand-primary/50 focus:bg-black/40 transition-all placeholder:text-slate-600 text-sm font-medium"
-                        />
-                        {/^\d+$/.test(identity) ? (
-                            <Smartphone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-                        ) : (
-                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-                        )}
-                    </div>
-                </div>
-
-                {/* Password Input */}
-                <div className="space-y-1">
-                    <label className="text-[10px] text-brand-primary font-bold uppercase tracking-widest ml-1">Password</label>
-                    <div className="relative group/input">
-                        <input 
-                            type={showPassword ? "text" : "password"}
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            placeholder="••••••••"
-                            className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 pl-10 pr-10 text-white focus:outline-none focus:border-brand-primary/50 focus:bg-black/40 transition-all placeholder:text-slate-600 text-sm font-medium"
-                            onKeyDown={(e) => e.key === 'Enter' && handleCredentialsSubmit()}
-                        />
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
-                        <button 
-                            onClick={() => setShowPassword(!showPassword)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
-                        >
-                            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        ) : (
-            // Step 2: OTP Form
-            <div className="w-full space-y-4 animate-fade-in text-center">
-                 <div className="w-16 h-16 bg-brand-primary/20 rounded-full flex items-center justify-center mx-auto mb-2 animate-bounce">
-                    <ShieldCheck size={32} className="text-brand-primary" />
-                 </div>
-                 <h3 className="text-white font-bold text-lg">Verification Required</h3>
-                 <p className="text-slate-400 text-xs">We sent a verification code to <br/><span className="text-white font-mono">{identity}</span></p>
-                 
-                 <div className="pt-4">
+                <div className="relative group">
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-white transition-colors" size={18} />
                     <input 
                         type="text" 
-                        value={otp}
-                        maxLength={4}
-                        onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, ''))}
-                        placeholder="0000"
-                        className="w-40 bg-black/40 border border-white/20 rounded-xl py-3 text-center text-2xl tracking-[0.5em] text-white font-mono focus:border-brand-secondary focus:outline-none"
+                        placeholder="Email or UserID"
+                        value={identity}
+                        onChange={(e) => setIdentity(e.target.value)}
+                        className="w-full bg-black/20 border border-white/10 rounded-2xl py-4 pl-12 pr-6 text-white placeholder-white/30 focus:outline-none focus:border-white/40 transition-all text-sm font-medium"
                     />
-                 </div>
-                 <button onClick={() => setStep('credentials')} className="text-xs text-slate-500 hover:text-white underline mt-2">Change details</button>
-            </div>
-        )}
+                </div>
 
-        {/* Error Message */}
-        {error && (
-            <div className="text-red-400 text-xs mt-3 bg-red-500/10 px-3 py-1.5 rounded-lg border border-red-500/20 w-full text-center">
-                {error}
+                <div className="relative group">
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-white transition-colors" size={18} />
+                    <input 
+                        type="password" 
+                        placeholder="Secret Key"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full bg-black/20 border border-white/10 rounded-2xl py-4 pl-12 pr-6 text-white placeholder-white/30 focus:outline-none focus:border-white/40 transition-all text-sm font-medium"
+                    />
+                </div>
             </div>
-        )}
 
-        {/* Submit Button */}
-        <button 
-            onClick={step === 'credentials' ? handleCredentialsSubmit : handleOtpVerify}
-            disabled={loading}
-            className="w-full mt-6 py-3.5 rounded-xl bg-gradient-to-r from-brand-primary to-brand-secondary text-white font-bold tracking-wide shadow-lg shadow-brand-primary/25 hover:shadow-brand-secondary/40 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center gap-3 relative overflow-hidden"
-        >
-            {loading ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-            ) : (
-                <>
-                    <span>{step === 'credentials' ? (isLogin ? 'Access System' : 'Get OTP') : 'Verify & Enter'}</span>
-                    <ArrowRight size={18} />
-                </>
+            {error && (
+                <div className="mt-4 text-center text-white text-xs font-bold bg-rose-500/30 py-2.5 rounded-xl border border-rose-500/20 animate-in fade-in zoom-in-95">
+                    {error}
+                </div>
             )}
-        </button>
 
-        {/* Guest Login Option */}
-        {step === 'credentials' && (
-             <button 
-                onClick={handleGuestAccess}
+            <button 
+                onClick={handleSubmit}
                 disabled={loading}
-                className="w-full mt-3 py-3 rounded-xl border border-white/10 hover:bg-white/5 text-slate-300 text-sm font-medium tracking-wide transition-all flex items-center justify-center gap-2 hover:text-white active:scale-[0.98]"
+                className="w-full mt-8 bg-white text-siya-pink font-bold rounded-2xl py-4.5 hover:shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
-                <UserCheck size={16} />
-                Continue as Guest
+                {loading ? 'Initializing...' : (isLogin ? 'Enter System' : 'Create Uplink')}
+                {!loading && <ArrowRight size={20} />}
             </button>
-        )}
-
-        {/* Footer */}
-        <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-6 uppercase tracking-widest opacity-60">
-            <Fingerprint size={12} />
-            {isLogin ? 'Secure Session' : 'Encrypted Registration'}
+            
+            <div className="mt-6 text-center">
+                <button 
+                    onClick={() => { setIsLogin(!isLogin); setError(''); }} 
+                    className="text-white/40 text-xs font-semibold hover:text-white transition-colors"
+                >
+                    {isLogin ? "Don't have an account? Sign up" : 'Already have access? Login'}
+                </button>
+            </div>
         </div>
+
+        {/* Guest */}
+        <button 
+            onClick={() => { setLoading(true); setTimeout(() => onStart(loginAsGuest()), 500); }} 
+            className="mt-10 text-white/30 text-[10px] font-black uppercase tracking-[0.4em] hover:text-white transition-colors flex items-center gap-2"
+        >
+            <Sparkles size={12} /> Guest Mode
+        </button>
+      </div>
+
+      <div className="absolute bottom-6 left-0 w-full text-center">
+          <div className="flex items-center justify-center gap-2 text-white/20 text-[9px] font-bold tracking-widest uppercase">
+              <ShieldCheck size={12} /> Biometric & Neural Encryption Verified
+          </div>
       </div>
     </div>
   );

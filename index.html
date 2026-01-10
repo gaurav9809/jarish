@@ -1,132 +1,137 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>SIYA - Virtual Companion</title>
+    <title>SIYA AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
-    <!-- EmailJS SDK -->
-    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script>
-      // Polyfill for process.env
-      window.process = window.process || { env: { NODE_ENV: 'production' } };
-    </script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            fontFamily: {
-              sans: ['Outfit', 'sans-serif'],
-              mono: ['JetBrains Mono', 'monospace'],
-            },
-            colors: {
-              brand: {
-                dark: '#0f0c29',
-                purple: '#302b63',
-                teal: '#24243e',
-                primary: '#8b5cf6', // Violet
-                secondary: '#ec4899', // Pink
-                accent: '#06b6d4', // Cyan
-              }
-            },
-            animation: {
-              'blob': 'blob 10s infinite',
-              'fade-in': 'fadeIn 0.4s ease-out forwards',
-              'spin-slow': 'spin 3s linear infinite',
-            },
-            keyframes: {
-              blob: {
-                '0%': { transform: 'translate(0px, 0px) scale(1)' },
-                '33%': { transform: 'translate(30px, -50px) scale(1.1)' },
-                '66%': { transform: 'translate(-20px, 20px) scale(0.9)' },
-                '100%': { transform: 'translate(0px, 0px) scale(1)' },
-              },
-              fadeIn: {
-                '0%': { opacity: '0', transform: 'translateY(10px)' },
-                '100%': { opacity: '1', transform: 'translateY(0)' },
-              }
-            }
-          }
-        }
-      }
+      // Support for environment variables in the browser
+      window.process = window.process || { env: {} };
+      // Note: Vercel will inject values here if configured
+      window.process.env.NODE_ENV = 'production';
     </script>
     <style>
+      * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
       body {
-        background-color: #0f0c29;
-        color: #fff;
-        overflow: hidden; /* Prevent body scroll, handle inside components */
         margin: 0;
         padding: 0;
-        /* Hardware Acceleration for smoother rendering */
-        -webkit-font-smoothing: antialiased;
-        -moz-osx-font-smoothing: grayscale;
+        background-color: #000;
+        color: #fff;
+        overflow: hidden;
       }
       
-      /* Optimize Touch Actions */
-      button, input, textarea {
-        touch-action: manipulation;
+      .pink-gradient-bg {
+        background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+        position: relative;
+        overflow: hidden;
       }
 
-      /* iOS Smooth Scrolling */
-      .custom-scrollbar {
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: thin;
+      .personal-mesh-bg {
+        background-color: #050508;
+        background-image: 
+          radial-gradient(at 0% 0%, hsla(253,16%,15%,1) 0, transparent 50%), 
+          radial-gradient(at 50% 0%, hsla(225,39%,30%,0.3) 0, transparent 50%), 
+          radial-gradient(at 100% 0%, hsla(339,49%,30%,0.3) 0, transparent 50%),
+          radial-gradient(at 100% 100%, hsla(250,50%,20%,0.4) 0, transparent 50%),
+          radial-gradient(at 0% 100%, hsla(280,50%,20%,0.4) 0, transparent 50%);
+        background-size: 200% 200%;
+        animation: meshMove 15s ease-in-out infinite alternate;
       }
-      
-      ::-webkit-scrollbar {
-        width: 4px;
+
+      @keyframes meshMove {
+        0% { background-position: 0% 0%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 100%; }
       }
-      ::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      ::-webkit-scrollbar-thumb {
-        background: rgba(139, 92, 246, 0.3);
-        border-radius: 10px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: rgba(139, 92, 246, 0.6);
-      }
-      
-      .glass-panel {
-        background: rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(16px);
-        -webkit-backdrop-filter: blur(16px); /* Safari support */
+
+      .glass-effect {
+        background: rgba(255, 255, 255, 0.03);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
         border: 1px solid rgba(255, 255, 255, 0.1);
       }
-      
-      /* GPU Acceleration Utility */
-      .gpu-accelerated {
-        transform: translate3d(0, 0, 0);
-        backface-visibility: hidden;
-        perspective: 1000px;
+
+      .personal-bubble-user {
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
       }
-      
-      /* Hide scrollbar for clean UI but keep functionality */
-      .scrollbar-hide::-webkit-scrollbar {
-          display: none;
+
+      .personal-bubble-ai {
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
       }
-      .scrollbar-hide {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
+
+      .nav-pill-active {
+        background: rgba(255, 255, 255, 0.1);
+        box-shadow: 0 0 15px rgba(255, 255, 255, 0.05);
+      }
+
+      .hide-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .hide-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+
+      .typing-dot {
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        animation: typing 1s infinite ease-in-out;
+      }
+
+      @keyframes typing {
+        0%, 100% { transform: translateY(0); opacity: 0.3; }
+        50% { transform: translateY(-4px); opacity: 1; }
+      }
+
+      .grain::after {
+        content: "";
+        position: fixed;
+        top: -100%;
+        left: -100%;
+        width: 300%;
+        height: 300%;
+        background-image: url("https://upload.wikimedia.org/wikipedia/commons/7/76/Noise_64x64.png");
+        opacity: 0.02;
+        pointer-events: none;
+        animation: grain 8s steps(10) infinite;
+        z-index: 999;
+      }
+
+      @keyframes grain {
+        0%, 100% { transform: translate(0, 0); }
+        10% { transform: translate(-5%, -10%); }
+        30% { transform: translate(-10%, 5%); }
+        50% { transform: translate(15%, 10%); }
+        70% { transform: translate(-15%, 5%); }
+        90% { transform: translate(10%, 5%); }
       }
     </style>
-  <script type="importmap">
+  </head>
+  <body class="grain">
+    <div id="root"></div>
+    <script type="importmap">
 {
   "imports": {
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "react-dom/client": "https://esm.sh/react-dom@^19.2.3/client",
-    "react-dom": "https://esm.sh/react-dom@^19.2.3",
-    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
     "react": "https://esm.sh/react@^19.2.3",
+    "react-dom": "https://esm.sh/react-dom@^19.2.3",
+    "react-dom/client": "https://esm.sh/react-dom@19.2.3/client",
+    "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.462.0",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/"
   }
 }
 </script>
-</head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="./index.tsx"></script>
+    <script type="module" src="index.tsx"></script>
   </body>
 </html>

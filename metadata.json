@@ -2,6 +2,7 @@
   "name": "SIYA",
   "description": "An advanced AI assistant inspired by Iron Man's JARVIS, featuring Study Mode, Coding Assistance, Web Search, and Real-time Voice Interaction.",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "camera"
   ]
 }

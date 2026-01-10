@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Chat, Type, FunctionDeclaration } from "@google/genai";
 import { PROFESSIONAL_INSTRUCTION } from "../constants";
 
@@ -20,13 +21,13 @@ export const APP_MAPPING: Record<string, string> = {
 
 export const openAppFunction: FunctionDeclaration = {
   name: 'openApp',
-  description: 'Opens a specified application or website in a new tab. Supported apps: YouTube, Google, Spotify, Gmail, GitHub, WhatsApp, Netflix, Twitter, Instagram, LinkedIn, Facebook.',
+  description: 'Opens an application or website.',
   parameters: {
     type: Type.OBJECT,
     properties: {
       appName: {
         type: Type.STRING,
-        description: 'The name of the application or website to open.',
+        description: 'The name of the app to open.',
       },
     },
     required: ['appName'],
@@ -35,137 +36,61 @@ export const openAppFunction: FunctionDeclaration = {
 
 export const sendSMSFunction: FunctionDeclaration = {
   name: 'sendSMS',
-  description: 'Sends an SMS message to a specific phone number. Use this when the user explicitly asks to send a text or SMS.',
+  description: 'Sends an SMS message.',
   parameters: {
     type: Type.OBJECT,
     properties: {
-      recipient: {
-        type: Type.STRING,
-        description: 'The phone number or name of the recipient.',
-      },
-      message: {
-        type: Type.STRING,
-        description: 'The content of the SMS message.',
-      },
+      recipient: { type: Type.STRING },
+      message: { type: Type.STRING },
     },
     required: ['recipient', 'message'],
   },
 };
 
-export const getTools = () => {
-  return [
-    { functionDeclarations: [openAppFunction, sendSMSFunction] }
-  ];
-};
-
-// --- Live API Helpers ---
+export const getTools = () => [{ functionDeclarations: [openAppFunction, sendSMSFunction] }];
 
 export function base64ToUint8Array(base64: string): Uint8Array {
   const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
   return bytes;
 }
 
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   let binary = '';
   const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
   return btoa(binary);
 }
 
-export function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64data = reader.result as string;
-      resolve(base64data.split(',')[1]);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-export async function decodeAudioData(
-  data: Uint8Array,
-  ctx: AudioContext,
-  sampleRate: number = 24000,
-  numChannels: number = 1
-): Promise<AudioBuffer> {
+export async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate = 24000, numChannels = 1): Promise<AudioBuffer> {
   const dataInt16 = new Int16Array(data.buffer);
   const frameCount = dataInt16.length / numChannels;
   const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-
   for (let channel = 0; channel < numChannels; channel++) {
     const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-    }
+    for (let i = 0; i < frameCount; i++) channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
   }
   return buffer;
 }
 
 export function createPcmBlob(data: Float32Array): { data: string; mimeType: string } {
-  const l = data.length;
-  const int16 = new Int16Array(l);
-  for (let i = 0; i < l; i++) {
-    int16[i] = data[i] * 32768;
-  }
-  return {
-    data: arrayBufferToBase64(int16.buffer),
-    mimeType: 'audio/pcm;rate=16000',
-  };
+  const int16 = new Int16Array(data.length);
+  for (let i = 0; i < data.length; i++) int16[i] = data[i] * 32768;
+  return { data: arrayBufferToBase64(int16.buffer), mimeType: 'audio/pcm;rate=16000' };
 }
 
-// Safely retrieve API Key without causing ReferenceError in browsers
-const getApiKey = (): string => {
-  try {
-    if (typeof process !== 'undefined' && process.env) {
-      return process.env.API_KEY || "";
-    }
-    return "";
-  } catch (e) {
-    return "";
-  }
-};
-
-// Instantiate client
 export const createChatSession = (customInstruction?: string): Chat => {
-  const apiKey = getApiKey();
-  
-  // Explicitly throw if key is missing so App.tsx can catch it immediately
-  // instead of waiting for a generic Network Error
-  if (!apiKey || apiKey.trim() === "") {
-      throw new Error("API_KEY_MISSING");
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
-  
-  const modelId = 'gemini-3-flash-preview'; 
-  const tools = getTools();
-  
-  const instruction = customInstruction || PROFESSIONAL_INSTRUCTION;
-
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Using gemini-3-flash-preview as the default high-efficiency engine
   return ai.chats.create({
-    model: modelId,
-    config: {
-      systemInstruction: instruction,
-      tools: tools,
+    model: 'gemini-3-flash-preview',
+    config: { 
+      systemInstruction: customInstruction || PROFESSIONAL_INSTRUCTION, 
+      tools: getTools(),
+      temperature: 0.6 
     },
   });
 };
 
-export const getLiveClient = () => {
-  const apiKey = getApiKey();
-  if (!apiKey || apiKey.trim() === "") {
-      throw new Error("API_KEY_MISSING");
-  }
-  const ai = new GoogleGenAI({ apiKey });
-  return ai.live;
-};
+export const getLiveClient = () => new GoogleGenAI({ apiKey: process.env.API_KEY }).live;

@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+
+import React, { useEffect, useRef } from 'react';
 
 interface VisualizerProps {
   analyser: AnalyserNode | null;
@@ -8,187 +9,123 @@ interface VisualizerProps {
 
 const Visualizer: React.FC<VisualizerProps> = ({ analyser, isActive, isSpeaking }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const imageRef = useRef<HTMLImageElement | null>(null);
-  const [imageLoaded, setImageLoaded] = useState(false);
-  
-  // Animation State
-  const blinkRef = useRef({ isBlinking: false, lastBlink: Date.now(), nextBlinkInterval: 3000 });
-  const breathRef = useRef(0);
-
-  useEffect(() => {
-    const img = new Image();
-    // High-quality Anime/3D Girl (Front Facing)
-    img.src = "https://img.freepik.com/premium-photo/cute-anime-girl-with-big-eyes-glasses_670382-120067.jpg"; 
-    
-    // Fallback if that fails (use a solid color or another reliable URL in real prod)
-    img.onerror = () => {
-        img.src = "https://img.freepik.com/premium-photo/3d-cartoon-character-cute-girl-avatar_1029469-242036.jpg";
-    };
-
-    img.crossOrigin = "Anonymous";
-    img.onload = () => setImageLoaded(true);
-    imageRef.current = img;
-  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !imageLoaded) return;
-
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     let animationId: number;
     const dataArray = new Uint8Array(analyser ? analyser.frequencyBinCount : 0);
 
     const draw = () => {
-      // 1. Resize Canvas to Full Parent
-      const parent = canvas.parentElement;
-      if (parent) {
-          if (canvas.width !== parent.clientWidth || canvas.height !== parent.clientHeight) {
-            canvas.width = parent.clientWidth;
-            canvas.height = parent.clientHeight;
-          }
-      }
-      const width = canvas.width;
-      const height = canvas.height;
+      const width = canvas.width = canvas.parentElement?.clientWidth || 300;
+      const height = canvas.height = canvas.parentElement?.clientHeight || 400;
+      const centerX = width / 2;
+      const centerY = height / 2;
       
       ctx.clearRect(0, 0, width, height);
 
-      // 2. Audio Analysis (Volume)
       let volume = 0;
       if (analyser && isActive) {
         analyser.getByteFrequencyData(dataArray);
-        // Focus on vocal frequencies (approx 300Hz - 3kHz range in bin terms)
-        const vocalRange = dataArray.slice(5, 40); 
-        const sum = vocalRange.reduce((a, b) => a + b, 0);
-        volume = sum / vocalRange.length;
+        volume = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
       }
 
-      // 3. Animation Variables
-      const now = Date.now();
+      const time = Date.now() / 1000;
+      const baseRadius = Math.min(width, height) * 0.2;
+      const pulse = isActive ? (volume / 255) * 60 : 0;
       
-      // Breathing (Sine wave scale)
-      breathRef.current += 0.02;
-      const breathScale = 1 + Math.sin(breathRef.current) * 0.005; // Subtle zoom in/out
+      // Draw Glow Background
+      const gradient = ctx.createRadialGradient(centerX, centerY, 10, centerX, centerY, baseRadius * 2);
+      gradient.addColorStop(0, isActive ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.02)');
+      gradient.addColorStop(1, 'transparent');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, width, height);
 
-      // Blinking
-      if (!blinkRef.current.isBlinking && now - blinkRef.current.lastBlink > blinkRef.current.nextBlinkInterval) {
-          blinkRef.current.isBlinking = true;
-          blinkRef.current.lastBlink = now;
+      // Draw Rotating Neural Rings
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        const r = baseRadius + pulse + (i * 20);
+        const rotation = time * (0.5 + i * 0.2);
+        
+        ctx.strokeStyle = isActive ? `rgba(99, 102, 241, ${0.8 - i * 0.2})` : `rgba(255, 255, 255, ${0.1})`;
+        ctx.lineWidth = 2 - i * 0.5;
+        
+        // Draw dashed ring
+        ctx.setLineDash([5 + i * 10, 15]);
+        ctx.arc(centerX, centerY, r, rotation, rotation + Math.PI * 1.5);
+        ctx.stroke();
       }
-      if (blinkRef.current.isBlinking && now - blinkRef.current.lastBlink > 150) { // Blink duration 150ms
-          blinkRef.current.isBlinking = false;
-          blinkRef.current.nextBlinkInterval = 2000 + Math.random() * 4000; // Random interval 2-6s
+
+      // Draw The Core
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      const coreR = (baseRadius * 0.5) + (pulse * 0.8);
+      const coreGradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, coreR);
+      coreGradient.addColorStop(0, isActive ? '#818cf8' : '#333');
+      coreGradient.addColorStop(1, isActive ? '#4f46e5' : '#111');
+      
+      ctx.fillStyle = coreGradient;
+      ctx.shadowBlur = isActive ? 30 : 5;
+      ctx.shadowColor = isActive ? '#6366f1' : 'transparent';
+      ctx.arc(centerX, centerY, coreR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Draw Reactive Waveforms
+      if (isActive && isSpeaking) {
+        ctx.beginPath();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        const wavePoints = 60;
+        for (let i = 0; i <= wavePoints; i++) {
+            const angle = (i / wavePoints) * Math.PI * 2;
+            const freqIndex = Math.floor((i / wavePoints) * dataArray.length * 0.2);
+            const amplitude = (dataArray[freqIndex] / 255) * 40;
+            const x = centerX + Math.cos(angle) * (coreR + 5 + amplitude);
+            const y = centerY + Math.sin(angle) * (coreR + 5 + amplitude);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
       }
 
-      // Mouth Opening (Based on Volume)
-      // Smoother transition
-      const targetMouthOpen = (isSpeaking && volume > 5) ? Math.min(volume / 3, 25) : 0;
-      // We could lerp this for smoothness, but direct mapping feels more responsive for lip sync
-      const mouthOpen = targetMouthOpen;
-
-      if (imageRef.current) {
-          const img = imageRef.current;
+      // Draw Floating "Neural Nodes"
+      const nodes = 8;
+      for (let i = 0; i < nodes; i++) {
+          const angle = (time * 0.3) + (i / nodes) * Math.PI * 2;
+          const dist = baseRadius * 1.5 + Math.sin(time + i) * 10;
+          const x = centerX + Math.cos(angle) * dist;
+          const y = centerY + Math.sin(angle) * dist;
           
-          // Image Positioning (Cover)
-          const imgRatio = img.naturalWidth / img.naturalHeight;
-          const canvasRatio = width / height;
-          let drawW, drawH, offX, offY;
-
-          if (canvasRatio > imgRatio) {
-              drawW = width;
-              drawH = width / imgRatio;
-              offX = 0;
-              offY = (height - drawH) / 2;
-          } else {
-              drawH = height;
-              drawW = height * imgRatio;
-              offX = (width - drawW) / 2;
-              offY = 0;
-          }
-
-          // Apply Breathing (Scale from center)
-          ctx.save();
-          ctx.translate(width/2, height/2);
-          ctx.scale(breathScale, breathScale);
-          ctx.translate(-width/2, -height/2);
-
-          // ** LIP SYNC RENDERING **
-          // Split image at mouth line (approx 60% down for most anime avatars)
-          const splitFactor = 0.58; 
-          const sourceSplitY = img.naturalHeight * splitFactor;
-          const destSplitY = offY + (drawH * splitFactor);
-
-          // Draw Top Half (Head)
-          ctx.drawImage(
-              img,
-              0, 0, img.naturalWidth, sourceSplitY,
-              offX, offY, drawW, drawH * splitFactor
-          );
-
-          // Draw Blink (Eyelids)
-          if (blinkRef.current.isBlinking) {
-              ctx.fillStyle = '#e6b8a2'; // Skin tone approx
-              // Approx Eye positions (relative to drawW/drawH)
-              // Left Eye
-              const eyeY = offY + (drawH * 0.45);
-              const eyeH = drawH * 0.08;
-              const eyeW = drawW * 0.12;
-              
-              // Simple "closed eye" line or skin patch
-              // This is a rough approximation; for production, use a separate "blink" sprite
-              // For now, we skip drawing the skin patch to avoid looking weird, 
-              // and instead just don't do anything or draw a line.
-              // Let's draw a simple dark lash line to simulate closed eye
-              ctx.fillStyle = '#4a2c2a';
-              ctx.fillRect(offX + (drawW * 0.35), eyeY, eyeW, 3); // Left
-              ctx.fillRect(offX + (drawW * 0.53), eyeY, eyeW, 3); // Right
-          }
-
-          // Draw Bottom Half (Jaw) - Shifted down by mouthOpen
-          ctx.drawImage(
-              img,
-              0, sourceSplitY, img.naturalWidth, img.naturalHeight - sourceSplitY,
-              offX, destSplitY + mouthOpen, drawW, drawH * (1 - splitFactor)
-          );
-
-          // Draw Mouth Interior (Black/Dark Red background behind the jaw drop)
-          if (mouthOpen > 2) {
-             ctx.fillStyle = '#2c0e0e';
-             // Position rect between the split
-             const mouthW = drawW * 0.15;
-             const mouthX = offX + (drawW * 0.5) - (mouthW / 2);
-             ctx.fillRect(mouthX, destSplitY, mouthW, mouthOpen + 2);
-          }
-
-          ctx.restore();
+          ctx.beginPath();
+          ctx.fillStyle = isActive ? 'rgba(129, 140, 248, 0.6)' : 'rgba(255,255,255,0.1)';
+          ctx.arc(x, y, 2, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Connect to core
+          ctx.beginPath();
+          ctx.strokeStyle = isActive ? 'rgba(99, 102, 241, 0.05)' : 'rgba(255,255,255,0.02)';
+          ctx.moveTo(centerX, centerY);
+          ctx.lineTo(x, y);
+          ctx.stroke();
       }
 
       animationId = requestAnimationFrame(draw);
     };
 
     draw();
-
     return () => cancelAnimationFrame(animationId);
-  }, [analyser, isActive, isSpeaking, imageLoaded]);
+  }, [analyser, isActive, isSpeaking]);
 
   return (
-    <div className="w-full h-full relative bg-gray-900 overflow-hidden flex items-center justify-center">
-        {!imageLoaded && (
-             <div className="text-white text-xs animate-pulse">Loading Avatar...</div>
-        )}
-        <canvas 
-            ref={canvasRef} 
-            className="w-full h-full object-cover"
-        />
-        
-        {/* Status Badge */}
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/30 px-4 py-1.5 rounded-full backdrop-blur-md border border-white/10 shadow-lg">
-            <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-green-400 shadow-[0_0_10px_#4ade80]' : 'bg-red-500'}`}></div>
-            <span className="text-[10px] text-white/90 font-semibold tracking-widest uppercase">
-                {isActive ? "Connected" : "Reconnecting..."}
-            </span>
-        </div>
+    <div className="w-full h-full relative bg-black overflow-hidden flex items-center justify-center">
+        <canvas ref={canvasRef} className="w-full h-full" />
+        <div className="absolute inset-0 pointer-events-none" style={{
+            background: 'radial-gradient(circle at center, transparent 0%, rgba(0,0,0,0.4) 100%)'
+        }}></div>
     </div>
   );
 };

@@ -1,8 +1,7 @@
+
 import React, { useEffect, useRef, useState } from 'react';
-import { MicOff, PhoneOff, Video, Mic, Monitor } from 'lucide-react';
+import { MicOff, PhoneOff, Mic, ShieldAlert } from 'lucide-react';
 import Visualizer from './Visualizer';
-import { getLiveClient, createPcmBlob, decodeAudioData, base64ToUint8Array, openAppFunction, APP_MAPPING, blobToBase64 } from '../services/geminiService';
-import { LiveServerMessage, Modality } from '@google/genai';
 import { ADAPTIVE_SYSTEM_INSTRUCTION } from '../constants';
 
 interface LiveInterfaceProps {
@@ -11,223 +10,120 @@ interface LiveInterfaceProps {
 }
 
 const LiveInterface: React.FC<LiveInterfaceProps> = ({ isActive, onToggle }) => {
-  const [status, setStatus] = useState<string>("CONNECTING...");
+  const [status, setStatus] = useState<string>("INITIALIZING UPLINK...");
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  
-  // Audio Context Refs
-  const inputContextRef = useRef<AudioContext | null>(null);
-  const outputContextRef = useRef<AudioContext | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  
-  // Audio Queue
-  const nextStartTimeRef = useRef<number>(0);
-  const audioQueueRef = useRef<AudioBufferSourceNode[]>([]);
-  const sessionRef = useRef<Promise<any> | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Self View Video Ref
-  const selfVideoRef = useRef<HTMLVideoElement>(null);
+  const recognitionRef = useRef<any>(null);
+  const synthesisRef = useRef<SpeechSynthesis | null>(null);
 
   useEffect(() => {
     if (isActive) {
-      initializeSession();
+      startVoiceLink();
     }
-    return () => cleanup();
+    return () => {
+      if (recognitionRef.current) recognitionRef.current.stop();
+      if (synthesisRef.current) synthesisRef.current.cancel();
+    };
   }, [isActive]);
 
-  const cleanup = () => {
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current = null;
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    if (inputContextRef.current) inputContextRef.current.close();
-    if (outputContextRef.current) outputContextRef.current.close();
+  const startVoiceLink = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     
-    audioQueueRef.current.forEach(source => { try { source.stop(); } catch(e) {} });
-    audioQueueRef.current = [];
-    nextStartTimeRef.current = 0;
-    setStatus("ENDED");
-  };
+    if (!SpeechRecognition) {
+      setError("Browser voice recognition not supported.");
+      return;
+    }
 
-  const executeOpenApp = (appName: string): string => {
-      const url = APP_MAPPING[appName.toLowerCase()];
-      if (url) {
-          window.open(url, '_blank');
-          return `Opened ${appName}`;
+    recognitionRef.current = new SpeechRecognition();
+    recognitionRef.current.continuous = true;
+    recognitionRef.current.interimResults = false;
+    recognitionRef.current.lang = 'hi-IN'; 
+
+    recognitionRef.current.onresult = async (event: any) => {
+      const last = event.results.length - 1;
+      const text = event.results[last][0].transcript;
+      if (text.trim() && !isMuted) {
+        processVoiceInput(text);
       }
-      return `Could not find app ${appName}`;
+    };
+
+    recognitionRef.current.start();
+    synthesisRef.current = window.speechSynthesis;
+    setStatus("NEURAL LINK ACTIVE");
   };
 
-  const initializeSession = async () => {
+  const processVoiceInput = async (userInput: string) => {
+    setStatus("AI ANALYZING...");
     try {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      inputContextRef.current = new AudioContextClass({ sampleRate: 16000 });
-      outputContextRef.current = new AudioContextClass({ sampleRate: 24000 });
-
-      const analyser = outputContextRef.current.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.connect(outputContextRef.current.destination);
-      analyserRef.current = analyser;
-
-      // Get User Media (Camera + Mic) for "Video Call" feel
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-      streamRef.current = stream;
-
-      // Show self view
-      if (selfVideoRef.current) {
-          selfVideoRef.current.srcObject = stream;
-      }
-
-      const client = getLiveClient();
-      const tools = [{ functionDeclarations: [openAppFunction] }];
-      
-      const sessionPromise = client.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } }, // Kore is soft/feminine
-          },
-          systemInstruction: ADAPTIVE_SYSTEM_INSTRUCTION,
-          tools: tools,
+      const response = await fetch(`https://api-inference.huggingface.co/models/meta-llama/Llama-3.2-3B-Instruct/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.HF_TOKEN || ''}`
         },
-        callbacks: {
-          onopen: () => {
-            setStatus("CONNECTED");
-            startAudioStream(stream, sessionPromise);
-          },
-          onmessage: async (message: LiveServerMessage) => {
-             // Handle Tools
-             if (message.toolCall) {
-                for (const fc of message.toolCall.functionCalls) {
-                    if (fc.name === 'openApp') {
-                        const appName = fc.args['appName'] as string;
-                        const result = executeOpenApp(appName);
-                        sessionPromise.then(session => {
-                            session.sendToolResponse({
-                                functionResponses: [{
-                                    id: fc.id, name: fc.name, response: { result: result }
-                                }]
-                            });
-                        });
-                    }
-                }
-             }
-
-            // Handle Audio
-            const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-            if (base64Audio && outputContextRef.current) {
-                const audioData = base64ToUint8Array(base64Audio);
-                const audioBuffer = await decodeAudioData(audioData, outputContextRef.current, 24000, 1);
-                playAudioChunk(audioBuffer);
-            }
-          },
-          onclose: () => setStatus("DISCONNECTED"),
-          onerror: (e) => setStatus("ERROR")
-        }
+        body: JSON.stringify({
+          model: "meta-llama/Llama-3.2-3B-Instruct",
+          messages: [
+              { role: 'system', content: ADAPTIVE_SYSTEM_INSTRUCTION + " Use very short verbal responses in Hinglish." },
+              { role: 'user', content: userInput }
+          ]
+        })
       });
-      
-      sessionRef.current = sessionPromise;
 
+      const data = await response.json();
+      if (data.choices && data.choices[0]) {
+        speakText(data.choices[0].message.content);
+      }
     } catch (err) {
       console.error(err);
-      setStatus("ERROR");
+      setStatus("UPLINK ERROR");
     }
   };
 
-  const startAudioStream = (stream: MediaStream, sessionPromise: Promise<any>) => {
-    if (!inputContextRef.current) return;
-    const source = inputContextRef.current.createMediaStreamSource(stream);
-    const processor = inputContextRef.current.createScriptProcessor(4096, 1, 1);
-    
-    processor.onaudioprocess = (e) => {
-      if (isMuted) return; // Mute Logic
-      const inputData = e.inputBuffer.getChannelData(0);
-      const pcmBlob = createPcmBlob(inputData);
-      sessionPromise.then(session => session.sendRealtimeInput({ media: pcmBlob })).catch(()=>{});
-    };
-
-    source.connect(processor);
-    processor.connect(inputContextRef.current.destination);
-    processorRef.current = processor;
-  };
-
-  const playAudioChunk = (buffer: AudioBuffer) => {
-    if (!outputContextRef.current || !analyserRef.current) return;
-    const ctx = outputContextRef.current;
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(analyserRef.current);
-    
-    const startTime = Math.max(ctx.currentTime, nextStartTimeRef.current);
-    source.start(startTime);
-    nextStartTimeRef.current = startTime + buffer.duration;
-    
-    setIsSpeaking(true);
-    source.onended = () => {
-        if (ctx.currentTime >= nextStartTimeRef.current - 0.1) setIsSpeaking(false);
-    };
+  const speakText = (text: string) => {
+    if (!synthesisRef.current) return;
+    const cleanText = text.replace(/\[REACT:.*?\]/g, "").trim();
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.rate = 1.1;
+    utterance.pitch = 1.1;
+    utterance.onstart = () => { setIsSpeaking(true); setStatus("SIYA SPEAKING"); };
+    utterance.onend = () => { setIsSpeaking(false); setStatus("AWAITING INPUT"); };
+    synthesisRef.current.speak(utterance);
   };
 
   return (
-    <div className="absolute inset-0 bg-black z-50 flex flex-col">
-       
-       {/* 1. Main Video Area (The AI Girl) */}
-       <div className="flex-1 relative overflow-hidden">
-            <Visualizer 
-                analyser={analyserRef.current} 
-                isActive={status === "CONNECTED"}
-                isSpeaking={isSpeaking}
-            />
-            
-            {/* Top Bar Overlay */}
-            <div className="absolute top-0 left-0 w-full p-6 bg-gradient-to-b from-black/60 to-transparent flex justify-between items-start z-10">
-                <div className="flex flex-col">
-                    <h2 className="text-white text-xl font-bold tracking-wide drop-shadow-md">Siya ❤️</h2>
-                    <span className="text-white/70 text-xs tracking-wider uppercase animate-pulse">{status}</span>
-                </div>
+    <div className="absolute inset-0 bg-black z-50 flex flex-col font-mono">
+       {error && (
+         <div className="absolute inset-0 z-[60] bg-black/95 flex items-center justify-center p-8 text-center">
+            <div className="max-w-xs flex flex-col items-center">
+                <ShieldAlert size={48} className="text-red-500 mb-6" />
+                <h2 className="text-white text-xl font-bold mb-4 uppercase">System Error</h2>
+                <p className="text-white/40 text-xs mb-8">{error}</p>
+                <button onClick={onToggle} className="w-full py-4 bg-white text-black font-black uppercase text-[10px] rounded-full">Terminate</button>
             </div>
+         </div>
+       )}
 
-            {/* Self View (Draggable-ish look) */}
-            <div className="absolute top-4 right-4 w-28 h-36 md:w-32 md:h-48 bg-black/50 rounded-xl overflow-hidden border border-white/20 shadow-2xl z-20">
-                <video 
-                    ref={selfVideoRef} 
-                    autoPlay 
-                    muted 
-                    playsInline 
-                    className="w-full h-full object-cover transform scale-x-[-1]" // Mirror effect
-                />
+       <div className="absolute top-0 left-0 w-full p-8 z-20 flex justify-between items-start pointer-events-none">
+            <div className="flex flex-col gap-2">
+                <div className="border border-indigo-500/30 bg-black/60 px-5 py-2 text-indigo-400 text-[10px] font-black tracking-[0.3em] backdrop-blur-3xl">
+                    STATUS: {status}
+                </div>
             </div>
        </div>
 
-       {/* 2. Bottom Control Bar (Glassmorphism) */}
-       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-white/10 backdrop-blur-xl border border-white/10 rounded-[2rem] p-4 flex items-center justify-evenly shadow-2xl animate-fade-in z-30">
-            
-            {/* Mute Button */}
-            <button 
-                onClick={() => setIsMuted(!isMuted)}
-                className={`p-4 rounded-full transition-all active:scale-95 ${isMuted ? 'bg-white text-black' : 'bg-white/10 text-white hover:bg-white/20'}`}
-            >
-                {isMuted ? <MicOff size={24} /> : <Mic size={24} />}
-            </button>
+       <div className="flex-1 relative overflow-hidden">
+            <Visualizer analyser={null} isActive={isActive} isSpeaking={isSpeaking} />
+       </div>
 
-            {/* End Call Button */}
-            <button 
-                onClick={onToggle}
-                className="p-5 bg-red-500 rounded-full text-white shadow-[0_0_20px_rgba(239,68,68,0.5)] hover:bg-red-600 transition-all active:scale-95 transform hover:scale-110"
-            >
-                <PhoneOff size={32} fill="currentColor" />
+       <div className="h-40 bg-black border-t border-white/5 flex items-center justify-center gap-12 relative z-30 px-8">
+            <button onClick={() => setIsMuted(!isMuted)} className={`w-20 h-20 rounded-full flex items-center justify-center border transition-all ${isMuted ? 'bg-red-500/10 border-red-500 text-red-500' : 'bg-white/5 border-white/10 text-white/40'}`}>
+                {isMuted ? <MicOff size={28} /> : <Mic size={28} />}
             </button>
-
-            {/* Camera Toggle (Fake/Placeholder for visual) */}
-            <button className="p-4 rounded-full bg-white/10 text-white hover:bg-white/20 transition-all active:scale-95">
-                <Video size={24} />
+            <button onClick={onToggle} className="w-24 h-24 bg-red-600 rounded-full flex items-center justify-center shadow-2xl transition-all">
+                <PhoneOff size={32} className="text-white" />
             </button>
        </div>
     </div>
