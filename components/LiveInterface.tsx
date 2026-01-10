@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { MicOff, PhoneOff, Mic, ShieldAlert } from 'lucide-react';
 import Visualizer from './Visualizer';
 import { ADAPTIVE_SYSTEM_INSTRUCTION } from '../constants';
+import { getApiKey } from '../services/localAiService';
 
 interface LiveInterfaceProps {
   isActive: boolean;
@@ -51,40 +52,57 @@ const LiveInterface: React.FC<LiveInterfaceProps> = ({ isActive, onToggle }) => 
 
     recognitionRef.current.start();
     synthesisRef.current = window.speechSynthesis;
-    setStatus("NEURAL LINK ACTIVE");
+    setStatus("NEURAL LINK ACTIVE (R1)");
   };
 
   const processVoiceInput = async (userInput: string) => {
-    setStatus("AI ANALYZING...");
+    setStatus("R1 THINKING...");
     try {
-      const response = await fetch(`https://api-inference.huggingface.co/models/meta-llama/Llama-3.2-3B-Instruct/v1/chat/completions`, {
+      const apiKey = getApiKey();
+      if (!apiKey) {
+          throw new Error("DeepSeek API Key missing");
+      }
+
+      const response = await fetch(`https://api.deepseek.com/chat/completions`, {
         method: 'POST',
         headers: { 
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.HF_TOKEN || ''}`
+            'Authorization': `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: "meta-llama/Llama-3.2-3B-Instruct",
+          model: "deepseek-reasoner",
           messages: [
-              { role: 'system', content: ADAPTIVE_SYSTEM_INSTRUCTION + " Use very short verbal responses in Hinglish." },
+              { role: 'system', content: ADAPTIVE_SYSTEM_INSTRUCTION + " Reply in extremely short Hinglish sentences." },
               { role: 'user', content: userInput }
           ]
         })
       });
 
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error?.message || `API Error: ${response.status}`);
+      }
+
       const data = await response.json();
       if (data.choices && data.choices[0]) {
-        speakText(data.choices[0].message.content);
+        // R1 might return reasoning content, we only want the final speech content
+        const content = data.choices[0].message.content;
+        speakText(content);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
       setStatus("UPLINK ERROR");
+      if (err.message.includes("Key missing")) {
+        speakText("API key missing sir.");
+      }
     }
   };
 
   const speakText = (text: string) => {
     if (!synthesisRef.current) return;
-    const cleanText = text.replace(/\[REACT:.*?\]/g, "").trim();
+    if (!text) return;
+    
+    const cleanText = text.replace(/\[REACT:.*?\]/g, "").replace(/\<.*?\>/g, "").trim();
     const utterance = new SpeechSynthesisUtterance(cleanText);
     utterance.rate = 1.1;
     utterance.pitch = 1.1;
