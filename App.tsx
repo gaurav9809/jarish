@@ -197,7 +197,7 @@ const App: React.FC = () => {
     : 'from-[#1f0510] via-[#150205] to-black'; // Deep Rose/Black for Personal
 
   return (
-    <div className={`fixed inset-0 w-full bg-gradient-to-b ${bgGradient} transition-colors duration-1000 overflow-hidden font-sans`}>
+    <div className={`fixed inset-0 w-full bg-gradient-to-b ${bgGradient} transition-colors duration-1000 overflow-hidden font-sans flex flex-col`}>
       {!isLoggedIn ? (
           <WelcomeScreen onStart={(u) => { setUserName(u.fullName); setUserIdentity(u.identity); setProMessages(u.history.professional || []); setPersonalMessages(u.history.personal || []); setCallLogs(u.callLogs || []); setIsLoggedIn(true); }} />
       ) : (
