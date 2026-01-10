@@ -40,14 +40,19 @@ const App: React.FC = () => {
   const callStartTimeRef = useRef<number>(0);
 
   useEffect(() => {
-    const sessionUser = getSessionUser();
-    if (sessionUser) {
-        setUserIdentity(sessionUser.identity);
-        setUserName(sessionUser.fullName);
-        setProMessages(sessionUser.history.professional || []);
-        setPersonalMessages(sessionUser.history.personal || []);
-        setCallLogs(sessionUser.callLogs || []);
-        setIsLoggedIn(true);
+    try {
+      const sessionUser = getSessionUser();
+      if (sessionUser) {
+          setUserIdentity(sessionUser.identity);
+          setUserName(sessionUser.fullName);
+          setProMessages(sessionUser.history.professional || []);
+          setPersonalMessages(sessionUser.history.personal || []);
+          setCallLogs(sessionUser.callLogs || []);
+          setIsLoggedIn(true);
+      }
+    } catch (e) {
+      console.error("Session Load Error", e);
+      logoutUser();
     }
   }, []);
 
@@ -56,27 +61,30 @@ const App: React.FC = () => {
   }, [isLoggedIn, personalMessages.length, mode]);
 
   const startSessions = () => {
-    if (!proSessionRef.current) {
-        proSessionRef.current = createChatSession(PROFESSIONAL_INSTRUCTION);
-    }
-    
-    const msgCount = personalMessages.filter(m => !m.isCall).length;
-    let newInstruction = PERSONAL_PHASE_FRIEND;
-    if (msgCount > 150) newInstruction = PERSONAL_PHASE_LOVER;
-    else if (msgCount > 50) newInstruction = PERSONAL_PHASE_DEVELOPING;
+    try {
+        if (!proSessionRef.current) {
+            proSessionRef.current = createChatSession(PROFESSIONAL_INSTRUCTION);
+        }
+        
+        const msgCount = personalMessages.filter(m => !m.isCall).length;
+        let newInstruction = PERSONAL_PHASE_FRIEND;
+        if (msgCount > 150) newInstruction = PERSONAL_PHASE_LOVER;
+        else if (msgCount > 50) newInstruction = PERSONAL_PHASE_DEVELOPING;
 
-    if (newInstruction !== currentPersonalInstructionRef.current || !personalSessionRef.current) {
-        currentPersonalInstructionRef.current = newInstruction;
-        personalSessionRef.current = createChatSession(newInstruction);
+        if (newInstruction !== currentPersonalInstructionRef.current || !personalSessionRef.current) {
+            currentPersonalInstructionRef.current = newInstruction;
+            personalSessionRef.current = createChatSession(newInstruction);
+        }
+    } catch (e) {
+        console.error("Failed to start Gemini sessions:", e);
     }
   };
 
   const handleSendMessage = async (imageData?: string) => {
     if (!inputValue.trim() && !imageData) return;
     const currentMode = mode;
-    const activeSession = currentMode === 'professional' ? proSessionRef.current : personalSessionRef.current;
-    if (!activeSession) return;
-
+    
+    // Optimistically add user message
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -91,35 +99,64 @@ const App: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const lastBotMsg = [...currentMessages].reverse().find(m => m.role === 'model' && !m.isCall);
-      let contextPrefix = "";
-      if (lastBotMsg && lastBotMsg.reaction) {
-          contextPrefix = `[User reacted with ${lastBotMsg.reaction}] `;
-      }
+        // Ensure session exists
+        let activeSession = currentMode === 'professional' ? proSessionRef.current : personalSessionRef.current;
+        
+        if (!activeSession) {
+            console.warn("Session lost. Attempting recovery...");
+            startSessions();
+            activeSession = currentMode === 'professional' ? proSessionRef.current : personalSessionRef.current;
+            
+            if (!activeSession) {
+                throw new Error("Unable to initialize Neural Link. Please check API Key configuration.");
+            }
+        }
 
-      // Send message to Gemini
-      const response = await activeSession.sendMessage({ message: contextPrefix + userMsg.content });
-      let responseText = response.text || "";
-      
-      const reactMatch = responseText.match(/\[REACT:\s*([\uD800-\uDBFF][\uDC00-\uDFFF]|\S+)\]/);
-      if (reactMatch) {
-          const aiEmoji = reactMatch[1];
-          responseText = responseText.replace(/\[REACT:.*?\]/, "").trim();
-          handleReact(userMsg.id, aiEmoji);
-      }
+        const lastBotMsg = [...currentMessages].reverse().find(m => m.role === 'model' && !m.isCall);
+        let contextPrefix = "";
+        if (lastBotMsg && lastBotMsg.reaction) {
+            contextPrefix = `[User reacted with ${lastBotMsg.reaction}] `;
+        }
 
-      const botMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'model',
-        content: responseText,
-        timestamp: Date.now(),
-      };
+        // Send message to Gemini
+        const response = await activeSession.sendMessage({ message: contextPrefix + userMsg.content });
+        let responseText = response.text || "";
+        
+        // Handle reactions if present in text
+        const reactMatch = responseText.match(/\[REACT:\s*([\uD800-\uDBFF][\uDC00-\uDFFF]|\S+)\]/);
+        if (reactMatch) {
+            const aiEmoji = reactMatch[1];
+            responseText = responseText.replace(/\[REACT:.*?\]/, "").trim();
+            handleReact(userMsg.id, aiEmoji);
+        }
 
-      if (currentMode === 'professional') setProMessages(prev => [...prev, botMsg]);
-      else setPersonalMessages(prev => [...prev, botMsg]);
+        // Handle empty text (e.g. function calls)
+        if (!responseText && response.functionCalls && response.functionCalls.length > 0) {
+             responseText = `[System: Executing ${response.functionCalls[0].name}...]`;
+        } else if (!responseText) {
+             responseText = "[System: Received empty response]";
+        }
+
+        const botMsg: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'model',
+            content: responseText,
+            timestamp: Date.now(),
+        };
+
+        if (currentMode === 'professional') setProMessages(prev => [...prev, botMsg]);
+        else setPersonalMessages(prev => [...prev, botMsg]);
 
     } catch (error: any) {
       console.error("Gemini Engine Error:", error);
+      const errorMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'model',
+        content: `Neural link error: ${error.message || "Connection unstable"}. ⚠️`,
+        timestamp: Date.now(),
+      };
+      if (currentMode === 'professional') setProMessages(prev => [...prev, errorMsg]);
+      else setPersonalMessages(prev => [...prev, errorMsg]);
     } finally {
       setIsLoading(false);
     }
@@ -160,7 +197,7 @@ const App: React.FC = () => {
     : 'from-[#1f0510] via-[#150205] to-black'; // Deep Rose/Black for Personal
 
   return (
-    <div className={`flex flex-col h-screen w-full bg-gradient-to-b ${bgGradient} transition-colors duration-1000 overflow-hidden relative font-sans`}>
+    <div className={`fixed inset-0 w-full bg-gradient-to-b ${bgGradient} transition-colors duration-1000 overflow-hidden font-sans`}>
       {!isLoggedIn ? (
           <WelcomeScreen onStart={(u) => { setUserName(u.fullName); setUserIdentity(u.identity); setProMessages(u.history.professional || []); setPersonalMessages(u.history.personal || []); setCallLogs(u.callLogs || []); setIsLoggedIn(true); }} />
       ) : (

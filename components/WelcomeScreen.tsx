@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Heart, User, Lock, ArrowRight, ShieldCheck, Sparkles, Zap } from 'lucide-react';
 import { registerUser, loginUser, loginAsGuest } from '../services/storageService';
@@ -50,57 +51,57 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col pink-gradient-bg p-6 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex flex-col bg-gradient-to-br from-[#1f0510] via-[#2a0a18] to-black p-6 overflow-hidden">
       {/* Decorative Orbs */}
-      <div className="absolute top-[-20%] left-[-20%] w-[80vw] h-[80vw] bg-white/10 rounded-full blur-[120px] animate-pulse"></div>
-      <div className="absolute bottom-[-20%] right-[-20%] w-[70vw] h-[70vw] bg-rose-400/20 rounded-full blur-[120px] animate-pulse delay-1000"></div>
+      <div className="absolute top-[-20%] left-[-20%] w-[80vw] h-[80vw] bg-pink-600/20 rounded-full blur-[120px] animate-pulse"></div>
+      <div className="absolute bottom-[-20%] right-[-20%] w-[70vw] h-[70vw] bg-rose-900/40 rounded-full blur-[120px] animate-pulse delay-1000"></div>
 
       <div className="flex-1 flex flex-col justify-center items-center max-w-md mx-auto w-full relative z-10">
         
         {/* Logo */}
         <div className="text-center mb-10">
-            <div className="w-16 h-16 bg-white rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-xl shadow-pink-900/10 border border-white/40">
-                <Zap size={32} className="text-siya-pink fill-current" />
+            <div className="w-16 h-16 bg-white/10 backdrop-blur-md rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-xl border border-white/20 animate-float">
+                <Zap size={32} className="text-pink-400 fill-current" />
             </div>
             <h1 className="text-4xl font-bold text-white tracking-tighter mb-1">SIYA AI</h1>
-            <p className="text-white/60 text-xs font-bold uppercase tracking-[0.3em]">Neural Interface v4.0</p>
+            <p className="text-pink-200/60 text-xs font-bold uppercase tracking-[0.3em]">Neural Interface v4.0</p>
         </div>
 
         {/* Auth Box */}
-        <div className="w-full glass-effect rounded-[32px] p-8 shadow-2xl overflow-hidden relative">
+        <div className="w-full bg-black/30 backdrop-blur-xl border border-white/10 rounded-[32px] p-8 shadow-2xl overflow-hidden relative">
             <div className="space-y-4">
                 {!isLogin && (
                      <div className="relative group">
-                        <User className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-white transition-colors" size={18} />
+                        <User className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-pink-400 transition-colors" size={18} />
                         <input 
                             type="text" 
                             placeholder="Full Name"
                             value={fullName}
                             onChange={(e) => setFullName(e.target.value)}
-                            className="w-full bg-black/20 border border-white/10 rounded-2xl py-4 pl-12 pr-6 text-white placeholder-white/30 focus:outline-none focus:border-white/40 transition-all text-sm font-medium"
+                            className="w-full bg-black/20 border border-white/10 rounded-2xl py-4 pl-12 pr-6 text-white placeholder-white/30 focus:outline-none focus:border-pink-500/50 transition-all text-sm font-medium"
                         />
                     </div>
                 )}
 
                 <div className="relative group">
-                    <User className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-white transition-colors" size={18} />
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-pink-400 transition-colors" size={18} />
                     <input 
                         type="text" 
                         placeholder="Email or UserID"
                         value={identity}
                         onChange={(e) => setIdentity(e.target.value)}
-                        className="w-full bg-black/20 border border-white/10 rounded-2xl py-4 pl-12 pr-6 text-white placeholder-white/30 focus:outline-none focus:border-white/40 transition-all text-sm font-medium"
+                        className="w-full bg-black/20 border border-white/10 rounded-2xl py-4 pl-12 pr-6 text-white placeholder-white/30 focus:outline-none focus:border-pink-500/50 transition-all text-sm font-medium"
                     />
                 </div>
 
                 <div className="relative group">
-                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-white transition-colors" size={18} />
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-pink-400 transition-colors" size={18} />
                     <input 
                         type="password" 
                         placeholder="Secret Key"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="w-full bg-black/20 border border-white/10 rounded-2xl py-4 pl-12 pr-6 text-white placeholder-white/30 focus:outline-none focus:border-white/40 transition-all text-sm font-medium"
+                        className="w-full bg-black/20 border border-white/10 rounded-2xl py-4 pl-12 pr-6 text-white placeholder-white/30 focus:outline-none focus:border-pink-500/50 transition-all text-sm font-medium"
                     />
                 </div>
             </div>
@@ -114,7 +115,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
             <button 
                 onClick={handleSubmit}
                 disabled={loading}
-                className="w-full mt-8 bg-white text-siya-pink font-bold rounded-2xl py-4.5 hover:shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full mt-8 bg-gradient-to-r from-pink-600 to-rose-600 text-white font-bold rounded-2xl py-4.5 hover:shadow-lg hover:shadow-pink-600/20 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
             >
                 {loading ? 'Initializing...' : (isLogin ? 'Enter System' : 'Create Uplink')}
                 {!loading && <ArrowRight size={20} />}
@@ -133,7 +134,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
         {/* Guest */}
         <button 
             onClick={() => { setLoading(true); setTimeout(() => onStart(loginAsGuest()), 500); }} 
-            className="mt-10 text-white/30 text-[10px] font-black uppercase tracking-[0.4em] hover:text-white transition-colors flex items-center gap-2"
+            className="mt-10 text-white/30 text-[10px] font-black uppercase tracking-[0.4em] hover:text-pink-400 transition-colors flex items-center gap-2"
         >
             <Sparkles size={12} /> Guest Mode
         </button>
