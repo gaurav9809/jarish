@@ -7,54 +7,61 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const OLLAMA_URL = 'http://127.0.0.1:11434/api/chat';
-const DEFAULT_MODEL = 'llama3.2'; 
+// --- CONFIGURATION ---
+// ⚠️ REPLACE 'YOUR_OPENROUTER_KEY' BELOW IF NOT SETTING ENV VARIABLE
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "YOUR_OPENROUTER_KEY_HERE";
+const MODEL_NAME = "deepseek/deepseek-r1"; // The Reasoning Model
+const SITE_URL = "http://localhost:3000";
+const SITE_NAME = "SIYA AI";
 
-// Health check to verify the proxy is up
 app.get('/health', (req, res) => {
-  res.json({ status: 'Proxy is running', ollama_url: OLLAMA_URL });
+  res.json({ status: 'SIYA OpenRouter Link Online', model: MODEL_NAME });
 });
 
 app.post('/api/chat', async (req, res) => {
-  const { messages, systemInstruction } = req.body;
+  const { messages } = req.body;
+
+  if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY === "YOUR_OPENROUTER_KEY_HERE") {
+    return res.status(500).json({ 
+      success: false, 
+      text: "⚠️ API KEY MISSING. Please configure OPENROUTER_API_KEY in server.js" 
+    });
+  }
 
   try {
-    const formattedMessages = [
-      { role: 'system', content: systemInstruction },
-      ...messages.map(msg => ({
-        role: msg.role === 'model' ? 'assistant' : msg.role,
-        content: msg.content
-      }))
-    ];
+    console.log(`[SIYA] Transmitting to OpenRouter (${MODEL_NAME})...`);
 
-    console.log(`Sending request to Ollama (${DEFAULT_MODEL})...`);
-    
-    const response = await axios.post(OLLAMA_URL, {
-      model: DEFAULT_MODEL,
-      messages: formattedMessages,
-      stream: false,
-      options: {
-        temperature: 0.7,
+    const response = await axios.post("https://openrouter.ai/api/v1/chat/completions", {
+      model: MODEL_NAME,
+      messages: messages,
+      // DeepSeek R1 specific parameters usually handled automatically, 
+      // but we ensure we don't limit thinking too much.
+      temperature: 0.6,
+    }, {
+      headers: {
+        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+        "HTTP-Referer": SITE_URL,
+        "X-Title": SITE_NAME,
+        "Content-Type": "application/json"
       }
-    }, { timeout: 30000 }); // 30s timeout
+    });
+
+    // Extract content
+    const reply = response.data.choices[0].message.content;
+    console.log(`[SIYA] Received ${reply.length} chars.`);
 
     res.json({
-      text: response.data.message.content,
+      text: reply,
       success: true
     });
 
   } catch (error) {
-    let errorMsg = 'Ollama connection error';
-    if (error.code === 'ECONNREFUSED') {
-      errorMsg = 'Ollama is not running on port 11434. Please start Ollama Desktop.';
-    } else if (error.code === 'ETIMEDOUT') {
-      errorMsg = 'Ollama took too long to respond. The model might be too heavy for your PC.';
-    }
-    
-    console.error('Backend Error:', errorMsg, error.message);
+    console.error("OpenRouter Error:", error.response?.data || error.message);
+    const errorText = error.response?.data?.error?.message || error.message;
     res.status(500).json({ 
       success: false, 
-      message: errorMsg 
+      text: `[NEURAL LINK FAILURE] ${errorText}`, 
+      details: error.message 
     });
   }
 });
@@ -63,10 +70,14 @@ const PORT = 3001;
 app.listen(PORT, () => {
   console.log(`
 =====================================================
-SIYA LOCAL BACKEND ACTIVE
-URL: http://localhost:${PORT}
-1. Make sure Ollama is running (llama3.2 downloaded)
-2. Keep this terminal window open
+   SIYA DEEPSEEK-R1 PROTOCOL INITIATED
+=====================================================
+   STATUS:  ONLINE
+   PORT:    ${PORT}
+   MODEL:   ${MODEL_NAME}
+   GATEWAY: OpenRouter
+   
+   ⚠️ Ensure OPENROUTER_API_KEY is set in server.js
 =====================================================
   `);
 });

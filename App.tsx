@@ -13,7 +13,7 @@ import {
   PERSONAL_PHASE_DEVELOPING, 
   PERSONAL_PHASE_LOVER 
 } from './constants';
-import { LogOut, Zap, Mic, Briefcase, Heart, Sparkles } from 'lucide-react';
+import { LogOut, Zap, Mic, Briefcase, Heart } from 'lucide-react';
 
 type Mode = 'professional' | 'personal';
 
@@ -66,10 +66,17 @@ const App: React.FC = () => {
             proSessionRef.current = createChatSession(PROFESSIONAL_INSTRUCTION);
         }
         
-        const msgCount = personalMessages.filter(m => !m.isCall).length;
+        const userMsgCount = personalMessages.filter(m => m.role === 'user' && !m.isCall).length;
         let newInstruction = PERSONAL_PHASE_FRIEND;
-        if (msgCount > 150) newInstruction = PERSONAL_PHASE_LOVER;
-        else if (msgCount > 50) newInstruction = PERSONAL_PHASE_DEVELOPING;
+        
+        // Revised natural thresholds
+        if (userMsgCount >= 80) {
+          newInstruction = PERSONAL_PHASE_LOVER;
+        } else if (userMsgCount >= 25) {
+          newInstruction = PERSONAL_PHASE_DEVELOPING;
+        } else {
+          newInstruction = PERSONAL_PHASE_FRIEND;
+        }
 
         if (newInstruction !== currentPersonalInstructionRef.current || !personalSessionRef.current) {
             currentPersonalInstructionRef.current = newInstruction;
@@ -84,7 +91,13 @@ const App: React.FC = () => {
     if (!inputValue.trim() && !imageData) return;
     const currentMode = mode;
     
-    // Optimistically add user message
+    // Find if the user reacted to the last AI message
+    const lastAiMsg = [...currentMessages].reverse().find(m => m.role === 'model' && !m.isCall);
+    let reactionContext = "";
+    if (lastAiMsg?.reaction) {
+        reactionContext = `[User reacted with ${lastAiMsg.reaction} to your last message] `;
+    }
+
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -99,60 +112,41 @@ const App: React.FC = () => {
     setIsLoading(true);
 
     try {
-        // Ensure session exists
         let activeSession = currentMode === 'professional' ? proSessionRef.current : personalSessionRef.current;
         
         if (!activeSession) {
-            console.warn("Session lost. Attempting recovery...");
             startSessions();
             activeSession = currentMode === 'professional' ? proSessionRef.current : personalSessionRef.current;
-            
-            if (!activeSession) {
-                throw new Error("Unable to initialize Neural Link. Please check API Key configuration.");
-            }
+            if (!activeSession) throw new Error("Link failed.");
         }
 
-        const lastBotMsg = [...currentMessages].reverse().find(m => m.role === 'model' && !m.isCall);
-        let contextPrefix = "";
-        if (lastBotMsg && lastBotMsg.reaction) {
-            contextPrefix = `[User reacted with ${lastBotMsg.reaction}] `;
-        }
-
-        // Send message to Gemini
-        const response = await activeSession.sendMessage({ message: contextPrefix + userMsg.content });
+        const response = await activeSession.sendMessage({ message: reactionContext + userMsg.content });
         let responseText = response.text || "";
         
-        // Handle reactions if present in text
         const reactMatch = responseText.match(/\[REACT:\s*([\uD800-\uDBFF][\uDC00-\uDFFF]|\S+)\]/);
+        let aiEmoji: string | undefined = undefined;
         if (reactMatch) {
-            const aiEmoji = reactMatch[1];
+            aiEmoji = reactMatch[1];
             responseText = responseText.replace(/\[REACT:.*?\]/, "").trim();
-            handleReact(userMsg.id, aiEmoji);
-        }
-
-        // Handle empty text (e.g. function calls)
-        if (!responseText && response.functionCalls && response.functionCalls.length > 0) {
-             responseText = `[System: Executing ${response.functionCalls[0].name}...]`;
-        } else if (!responseText) {
-             responseText = "[System: Received empty response]";
         }
 
         const botMsg: Message = {
             id: (Date.now() + 1).toString(),
             role: 'model',
-            content: responseText,
+            content: responseText || "[Empty Signal]",
             timestamp: Date.now(),
+            reaction: aiEmoji
         };
 
         if (currentMode === 'professional') setProMessages(prev => [...prev, botMsg]);
         else setPersonalMessages(prev => [...prev, botMsg]);
 
     } catch (error: any) {
-      console.error("Gemini Engine Error:", error);
+      console.error("Engine Error:", error);
       const errorMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        content: `Neural link error: ${error.message || "Connection unstable"}. ⚠️`,
+        content: `Neural link error. ⚠️`,
         timestamp: Date.now(),
       };
       if (currentMode === 'professional') setProMessages(prev => [...prev, errorMsg]);
@@ -191,21 +185,19 @@ const App: React.FC = () => {
     setShowCallScreen(false);
   };
 
-  // Dynamic Background Colors - Updated for Romantic Theme
   const bgGradient = mode === 'professional' 
     ? 'from-[#050f0a] via-[#020503] to-black' 
-    : 'from-[#1f0510] via-[#150205] to-black'; // Deep Rose/Black for Personal
+    : 'from-[#1f0510] via-[#150205] to-black';
 
   return (
-    <div className={`fixed inset-0 w-full bg-gradient-to-b ${bgGradient} transition-colors duration-1000 overflow-hidden font-sans flex flex-col`}>
+    <div className={`fixed inset-0 w-full h-full bg-gradient-to-b ${bgGradient} transition-colors duration-1000 overflow-hidden font-sans flex flex-col`}>
       {!isLoggedIn ? (
           <WelcomeScreen onStart={(u) => { setUserName(u.fullName); setUserIdentity(u.identity); setProMessages(u.history.professional || []); setPersonalMessages(u.history.personal || []); setCallLogs(u.callLogs || []); setIsLoggedIn(true); }} />
       ) : (
-          <>
+          <div className="flex flex-col h-full w-full relative">
             {showCallScreen && <CallScreen onHangUp={endCall} onAccept={() => { setIsLiveMode(true); setShowCallScreen(false); }} userName={userName} isCallActive={false} />}
             {isLiveMode ? <LiveInterface isActive={isLiveMode} onToggle={endCall} /> : (
                 <>
-                    {/* Floating Header */}
                     <header className="absolute top-0 left-0 right-0 h-24 z-40 flex items-center justify-between px-6 md:px-10 pointer-events-none">
                         <div className="pointer-events-auto flex items-center gap-3 glass-panel px-4 py-2 rounded-full shadow-2xl">
                             <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${mode === 'professional' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-pink-500/10 text-pink-400'}`}>
@@ -240,12 +232,12 @@ const App: React.FC = () => {
                         </div>
                     </header>
 
-                    <main className="flex-1 min-h-0 relative flex flex-col z-0">
+                    <main className="flex-1 min-h-0 relative z-0 flex flex-col h-full">
                         <ChatInterface messages={currentMessages} isLoading={isLoading} input={inputValue} setInput={setInputValue} onSend={handleSendMessage} mode={mode} onClearChat={() => {}} onReact={handleReact} />
                     </main>
                 </>
             )}
-          </>
+          </div>
       )}
     </div>
   );

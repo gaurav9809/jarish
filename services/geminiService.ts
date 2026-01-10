@@ -1,54 +1,16 @@
 
-import { GoogleGenAI, Chat, Type, FunctionDeclaration } from "@google/genai";
 import { PROFESSIONAL_INSTRUCTION } from "../constants";
+import { Message } from "../types";
 
-// --- App Mapping & Tools ---
+// --- Configuration ---
+const LOCAL_PROXY_URL = "http://localhost:3001/api/chat";
 
-export const APP_MAPPING: Record<string, string> = {
-  "youtube": "https://www.youtube.com",
-  "google": "https://www.google.com",
-  "spotify": "https://open.spotify.com",
-  "gmail": "https://mail.google.com",
-  "github": "https://github.com",
-  "whatsapp": "https://web.whatsapp.com",
-  "netflix": "https://www.netflix.com",
-  "twitter": "https://x.com",
-  "x": "https://x.com",
-  "instagram": "https://www.instagram.com",
-  "linkedin": "https://www.linkedin.com",
-  "facebook": "https://www.facebook.com"
-};
+// --- Types ---
+interface ChatSession {
+  sendMessage: (params: { message: string }) => Promise<{ text: string }>;
+}
 
-export const openAppFunction: FunctionDeclaration = {
-  name: 'openApp',
-  description: 'Opens an application or website.',
-  parameters: {
-    type: Type.OBJECT,
-    properties: {
-      appName: {
-        type: Type.STRING,
-        description: 'The name of the app to open.',
-      },
-    },
-    required: ['appName'],
-  },
-};
-
-export const sendSMSFunction: FunctionDeclaration = {
-  name: 'sendSMS',
-  description: 'Sends an SMS message.',
-  parameters: {
-    type: Type.OBJECT,
-    properties: {
-      recipient: { type: Type.STRING },
-      message: { type: Type.STRING },
-    },
-    required: ['recipient', 'message'],
-  },
-};
-
-export const getTools = () => [{ functionDeclarations: [openAppFunction, sendSMSFunction] }];
-
+// --- Audio Utilities (Kept for Visualizer) ---
 export function base64ToUint8Array(base64: string): Uint8Array {
   const binaryString = atob(base64);
   const bytes = new Uint8Array(binaryString.length);
@@ -63,34 +25,77 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-export async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate = 24000, numChannels = 1): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-  }
-  return buffer;
-}
+// --- DeepSeek R1 Chat Session ---
 
-export function createPcmBlob(data: Float32Array): { data: string; mimeType: string } {
-  const int16 = new Int16Array(data.length);
-  for (let i = 0; i < data.length; i++) int16[i] = data[i] * 32768;
-  return { data: arrayBufferToBase64(int16.buffer), mimeType: 'audio/pcm;rate=16000' };
-}
+export const createChatSession = (customInstruction?: string): ChatSession => {
+  let history: Message[] = [];
+  const systemInstruction = customInstruction || PROFESSIONAL_INSTRUCTION;
 
-export const createChatSession = (customInstruction?: string): Chat => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  // Using gemini-3-flash-preview as the default high-efficiency engine
-  return ai.chats.create({
-    model: 'gemini-3-flash-preview',
-    config: { 
-      systemInstruction: customInstruction || PROFESSIONAL_INSTRUCTION, 
-      tools: getTools(),
-      temperature: 0.6 
-    },
-  });
+  return {
+    sendMessage: async ({ message }: { message: string }) => {
+      try {
+        // Construct User Message
+        const userMsg: Message = { 
+            id: Date.now().toString(), 
+            role: 'user', 
+            content: message, 
+            timestamp: Date.now() 
+        };
+        
+        history.push(userMsg);
+        
+        // Prepare payload for OpenRouter (via local proxy)
+        const messagesPayload = [
+            { role: "system", content: systemInstruction },
+            ...history.map(m => ({
+                role: m.role === 'model' ? 'assistant' : m.role,
+                content: m.content
+            }))
+        ];
+
+        // Keep context window reasonable (DeepSeek has large context, but let's be efficient)
+        // We send full history for better reasoning context
+        
+        const response = await fetch(LOCAL_PROXY_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: messagesPayload })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Proxy Error: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        
+        if (!data.success) {
+            throw new Error(data.text || "Unknown Error");
+        }
+
+        const replyText = data.text;
+
+        // Add assistant reply to history
+        history.push({
+            id: (Date.now() + 1).toString(),
+            role: 'model',
+            content: replyText,
+            timestamp: Date.now()
+        });
+
+        return { text: replyText };
+
+      } catch (error: any) {
+        console.error("DeepSeek Link Error:", error);
+        history.pop(); // Remove failed message
+        throw error;
+      }
+    }
+  };
 };
 
-export const getLiveClient = () => new GoogleGenAI({ apiKey: process.env.API_KEY }).live;
+// Mock for compatibility
+export const getLiveClient = () => {
+    return {
+        connect: () => { throw new Error("Using DeepSeek R1 via OpenRouter."); }
+    }
+};

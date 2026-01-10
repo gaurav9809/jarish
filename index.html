@@ -1,9 +1,9 @@
+
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="height: 100%;">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="google-site-verification" content="_NYkqQOJ93SB3bRyz6CB8RYsY4cA8xT65rmOlmSj7Is" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>SIYA AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -31,6 +31,15 @@
         color: #fff;
         overflow: hidden;
         font-family: 'Inter', sans-serif;
+        height: 100%;
+        width: 100%;
+      }
+
+      #root {
+        height: 100%;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
       }
 
       /* Custom Scrollbar */
@@ -67,10 +76,9 @@
         100% { transform: translateY(0px); }
       }
 
-      @keyframes glowPulse {
-        0% { box-shadow: 0 0 5px rgba(99, 102, 241, 0.2); }
-        50% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.6); }
-        100% { box-shadow: 0 0 5px rgba(99, 102, 241, 0.2); }
+      @keyframes scan {
+        0% { transform: translateY(-100%); }
+        100% { transform: translateY(100vh); }
       }
 
       .animate-message-pop {
